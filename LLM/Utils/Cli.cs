@@ -1,7 +1,18 @@
+using TorchSharp;
+
 namespace llm_sharp.LLM.Utils;
 
 public static class CliExtensions
 {
+    public static void run_torch_test()
+    {
+        LibTorchLoader.EnsureLoaded();
+        Console.WriteLine($"Loaded libtorch from '{LibTorchLoader.LoadedPath}'");
+        Console.WriteLine($"Cuda is available: {torch.cuda_is_available()}");
+        torch.ones(3, 4).matmul(torch.ones(4, 5));
+        Console.WriteLine($"Test passed");
+    }
+
     public static void start_chat_cli(this LLM llm)
     {
         var history = new List<(string query, string answer)>();

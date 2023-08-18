@@ -6,7 +6,7 @@ namespace llm_sharp.LLM.Models;
 
 using Tensor = torch.Tensor;
 
-public class Qwen : LLM<LLaMAModel, LLaMAConfig, TikToken, TikTokenConfig, Qwen.QwenState>
+public class Qwen : GenerativeLM<LLaMAModel, LLaMAConfig, TikToken, TikTokenConfig, Qwen.QwenState>
 {
     public class QwenState : IDisposable
     {

@@ -8,6 +8,9 @@ public static class LibTorchLoader
 {
     private static object load_lock = new object();
     private static volatile bool loaded = false;
+    private static string loaded_path = "";
+
+    public static string LoadedPath => loaded_path;
 
     public static void EnsureLoaded(params string[] args)
     {
@@ -27,6 +30,7 @@ public static class LibTorchLoader
             {
                 NativeLibrary.Load(libtorch);
                 loaded = true;
+                loaded_path = libtorch;
             }
             catch (DllNotFoundException)
             {

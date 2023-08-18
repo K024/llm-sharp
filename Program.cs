@@ -1,5 +1,6 @@
 using llm_sharp.Services;
 using llm_sharp.LLM.Utils;
+using llm_sharp.LLM.Distributed;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -37,4 +38,12 @@ else if (command == "cli")
     var llmService = app.Services.GetRequiredService<LLMService>();
     var llm = llmService.FindModel(null) ?? throw new Exception("No models defined");
     llm.start_chat_cli();
+}
+else if (command == "test")
+{
+    CliExtensions.run_torch_test();
+}
+else if (command == "distributed-test")
+{
+    DistributedTest.Test();
 }

@@ -1,3 +1,5 @@
+using TorchSharp;
+
 namespace llm_sharp.LLM.Utils;
 
 public static class Extensions
@@ -50,5 +52,10 @@ public static class Extensions
     a2 = srcArray[2];
     a3 = srcArray[3];
     a4 = srcArray[4];
+  }
+
+  public static bool IsSame(this torch.Device a, torch.Device b)
+  {
+    return a.type == b.type && a.index == b.index;
   }
 }

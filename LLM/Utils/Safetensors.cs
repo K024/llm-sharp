@@ -163,8 +163,8 @@ public class Safetensors : IDisposable
                 if (tensor.dtype is ScalarType.Float32 or ScalarType.Float16 or ScalarType.BFloat16)
                     data = data.type_as(tensor);
 
-                // ensure same device
-                tensor.copy_(data.to(tensor.device));
+                // cross device copy is allowed
+                tensor.copy_(data);
                 state_dict.Remove(key);
             }
             else

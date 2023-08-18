@@ -24,7 +24,12 @@ public record GenerationConfig
 
 public abstract class LLM
 {
-    public abstract IEnumerable<string> chat(History history, string input, GenerationConfig? config = null);
+    public virtual bool can_chat => false;
+
+    public virtual IEnumerable<string> chat(History history, string input, GenerationConfig? config = null)
+    {
+        throw new NotImplementedException();
+    }
 
     public virtual string chat_response(History history, string input, GenerationConfig? config = null)
     {
@@ -52,7 +57,25 @@ public abstract class LLM
         return channel.Reader.ReadAllAsync();
     }
 
-    public abstract bool print_perf();
+    public virtual bool can_encode => false;
+
+    public virtual IList<float> encode(string text)
+    {
+        throw new NotImplementedException();
+    }
+
+    public virtual Task<IList<float>> encode_async(string text)
+    {
+        return Task.Factory.StartNew(() =>
+        {
+            return encode(text);
+        }, TaskCreationOptions.LongRunning);
+    }
+
+    public virtual bool print_perf()
+    {
+        throw new NotImplementedException();
+    }
 
     public static LLM from_pretrained(
         string classHint,
@@ -63,7 +86,7 @@ public abstract class LLM
     {
         var types = (assembly ?? typeof(LLM).Assembly).GetTypes();
 
-        var type = types.Where(x => 
+        var type = types.Where(x =>
             x.Name == classHint
             && x.IsClass
             && !x.IsAbstract
@@ -85,12 +108,11 @@ public abstract class LLM
     }
 }
 
-public abstract class LLM<TModel, TModelConfig, TTokenizer, TTokenizerConfig, TState> : LLM
+public abstract class LLM<TModel, TModelConfig, TTokenizer, TTokenizerConfig> : LLM
     where TModel : class
     where TModelConfig : class
     where TTokenizer : class
     where TTokenizerConfig : class
-    where TState : class, IDisposable
 {
     public const string model_config_file = "model_config.json";
     public const string tokenizer_config_file = "tokenizer_config.json";
@@ -135,6 +157,17 @@ public abstract class LLM<TModel, TModelConfig, TTokenizer, TTokenizerConfig, TS
 
         return (tokenizer, tokenizerConfig);
     }
+}
+
+public abstract class GenerativeLM<TModel, TModelConfig, TTokenizer, TTokenizerConfig, TState>
+        : LLM<TModel, TModelConfig, TTokenizer, TTokenizerConfig>
+    where TModel : class
+    where TModelConfig : class
+    where TTokenizer : class
+    where TTokenizerConfig : class
+    where TState : class, IDisposable
+{
+    public override bool can_chat => true;
 
     public static Tensor top_p_top_k_sampling(
         Tensor logits,
@@ -260,6 +293,54 @@ public abstract class LLM<TModel, TModelConfig, TTokenizer, TTokenizerConfig, TS
         Console.WriteLine($"  sum: {rest.Sum():0.0000} s");
         Console.WriteLine($"  gen: {rest.Count / rest.Sum():0.0000} tok/s");
         Console.WriteLine($"  avg: {times.Count / times.Sum():0.0000} tok/s");
+
+        return true;
+    }
+}
+
+public abstract class MaskedLM<TModel, TModelConfig, TTokenizer, TTokenizerConfig>
+        : LLM<TModel, TModelConfig, TTokenizer, TTokenizerConfig>
+    where TModel : class
+    where TModelConfig : class
+    where TTokenizer : class
+    where TTokenizerConfig : class
+{
+    public override bool can_encode => true;
+
+    /// <summary>
+    /// Apply template and tokenize input into ids
+    /// </summary>
+    protected abstract List<int> prepare_input(string input);
+
+    /// <summary>
+    /// Return a logits tensor with shape (vocab_size) 
+    /// </summary>
+    protected abstract IList<float> encode_tokens(List<int> tokens);
+
+    protected List<double> generation_time = new();
+
+    public override IList<float> encode(string text)
+    {
+        var stop_watch = Stopwatch.StartNew();
+        var result = encode_tokens(prepare_input(text));
+
+        stop_watch.Stop();
+        generation_time.Add(stop_watch.Elapsed.TotalSeconds);
+
+        while (generation_time.Count > 20)
+            generation_time.RemoveAt(0);
+
+        return result;
+    }
+
+    public override bool print_perf()
+    {
+        if (generation_time.Count < 1) return false;
+
+        var times = generation_time;
+
+        Console.WriteLine($"Encoder perf:");
+        Console.WriteLine($"  avg: {times.Count / times.Sum():0.0000} sentence/s");
 
         return true;
     }

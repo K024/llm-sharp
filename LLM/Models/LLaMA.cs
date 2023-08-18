@@ -85,7 +85,8 @@ public class RotaryEmbedding : nn.Module<Tensor, (Tensor cos, Tensor sin)>
     {
         using var scope = torch.NewDisposeScope();
         var half_dim = x.shape.Last() / 2;
-        var (x_r, x_i) = torch.split(x, Enumerable.Repeat(half_dim, 2).ToArray(), dim: -1);
+        var splitSizes = Enumerable.Repeat(half_dim, 2).ToArray();
+        var (x_r, x_i) = torch.split(x, splitSizes, dim: -1);
         var rotated = torch.cat(new[] { -x_i, x_r }, dim: -1);
         return scope.MoveToOuter(x * freqs_cis.cos + rotated * freqs_cis.sin);
     }
@@ -198,11 +199,8 @@ public class LLaMAAttention : nn.Module<
 
         var (n_batch, n_seq, _) = x.shape;
 
-        var (q, k, v) = torch.split(
-            qkv_proj.call(x),
-            Enumerable.Repeat(d_head * n_head, 3).ToArray(),
-            dim: -1
-        );
+        var splitSizes = Enumerable.Repeat(d_head * n_head, 3).ToArray();
+        var (q, k, v) = torch.split(qkv_proj.call(x), splitSizes, dim: -1);
 
         q = q.view(n_batch, n_seq, n_head, d_head);
         k = k.view(n_batch, n_seq, n_head, d_head);
