@@ -12,7 +12,7 @@ public static class LibTorchLoader
 
     public static string LoadedPath => loaded_path;
 
-    public static void EnsureLoaded(params string[] args)
+    public static void EnsureLoaded()
     {
         if (loaded) return;
 
@@ -21,10 +21,9 @@ public static class LibTorchLoader
             if (loaded) return;
 
             var libtorch =
-                FindInArgs(args)
-                    ?? FindInEnv()
-                    ?? FindInPythonSitePackages()
-                    ?? OsDefault();
+                FindInEnv()
+                ?? FindInPythonSitePackages()
+                ?? OsDefault();
 
             try
             {
@@ -35,12 +34,11 @@ public static class LibTorchLoader
             catch (DllNotFoundException)
             {
                 Console.Error.WriteLine(
-                    "Unable to load libtorch.\n" + 
+                    "Unable to load libtorch.\n" +
                     "Try:\n" +
                     "  Option 1: run in a python environment with torch installed (by pip or conda)\n" +
-                    "  Option 2: specify by command line args (--libtorch-path)\n" +
-                    "  Option 3: specify by environment variables (LIBTORCH_PATH)\n" +
-                    "  Option 4: add libtorch to PATH (windows) or LD_LIBRARY_PATH (unix/linux)\n"
+                    "  Option 2: specify by environment variables (LIBTORCH_PATH)\n" +
+                    "  Option 3: add libtorch to PATH (windows) or LD_LIBRARY_PATH (unix/linux)\n"
                 );
                 throw;
             }
@@ -87,25 +85,6 @@ public static class LibTorchLoader
         {
             return null;
         }
-    }
-
-    private static string? FindInArgs(params string[] args)
-    {
-        var list = args.ToList();
-        var index = list.FindIndex(x => x.StartsWith("--libtorch-path"));
-        if (index >= 0)
-        {
-            if (list[index].StartsWith("--libtorch-path="))
-            {
-                var splits = list[index].Split('=', 1);
-                return splits[1];
-            }
-            else if (list[index] == "--libtorch-path" && index + 1 < list.Count)
-            {
-                return list[index + 1];
-            }
-        }
-        return null;
     }
 
     private static string? FindInEnv()

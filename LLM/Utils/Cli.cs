@@ -11,6 +11,11 @@ public static class CliExtensions
         Console.WriteLine($"Cuda is available: {torch.cuda_is_available()}");
         torch.ones(3, 4).matmul(torch.ones(4, 5));
         Console.WriteLine($"Test passed");
+        if (torch.cuda_is_available())
+        {
+            torch.ones(3, 4).cuda().matmul(torch.ones(4, 5).cuda());
+            Console.WriteLine($"Cuda test passed");
+        }
     }
 
     public static void start_chat_cli(this LLM llm)

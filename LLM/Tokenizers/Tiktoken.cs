@@ -23,6 +23,9 @@ public record TikTokenConfig
 public class TikToken
 {
     // modified from https://github.com/openai/tiktoken/blob/main/src/lib.rs
+
+    // tiktoken works directly on utf-8 byte[]
+    // vocab and merges share the same ranks and are encoded with base64
     protected static List<T> byte_pair_merge<T>(
         byte[] piece,
         IReadOnlyDictionary<byte[], int> ranks,
@@ -124,26 +127,26 @@ public class TikToken
         ));
 
         encoder = new(
-            config.ranks.ToList().Select(pair =>
+            config.ranks.Select(pair =>
                 KeyValuePair.Create(Convert.FromBase64String(pair.Key), pair.Value)),
             new ByteArrayComparer()
         );
 
         decoder = new(
-            encoder.ToList().Select(x => KeyValuePair.Create(x.Value, x.Key))
+            encoder.Select(x => KeyValuePair.Create(x.Value, x.Key))
         );
 
         if (encoder.Count != decoder.Count)
             throw new Exception("Possible duplicated rank id");
 
         special_token_encoder = new(
-            config.special_tokens.ToList().Select(pair =>
+            config.special_tokens.Select(pair =>
                 KeyValuePair.Create(Encoding.UTF8.GetBytes(pair.Key), pair.Value)),
             new ByteArrayComparer()
         );
 
         special_token_decoder = new(
-            special_token_encoder.ToList().Select(x => KeyValuePair.Create(x.Value, x.Key))
+            special_token_encoder.Select(x => KeyValuePair.Create(x.Value, x.Key))
         );
 
         if (special_token_encoder.Count != special_token_decoder.Count)
@@ -199,6 +202,9 @@ public class TikToken
         var start = 0;
         foreach (var match in special_pattern.Matches(text).ToList())
         {
+            if (match.Length <= 0)
+                continue;
+
             var special_start = match.Index;
 
             if (start < special_start)
