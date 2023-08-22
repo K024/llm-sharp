@@ -25,8 +25,7 @@ public class SentencePieceBPE : BPE
             pattern = "^$", // no pattern
         })
     {
-        byte_encoder = new();
-        byte_decoder = new();
+        // SentencePiece BPE is expected to have byte fallback
         foreach (var b in Enumerable.Range(0, 256))
         {
             var str = $"<0x{b:X2}>";
@@ -36,45 +35,38 @@ public class SentencePieceBPE : BPE
         }
     }
 
-    protected new Dictionary<byte, int> byte_encoder;
-    protected new Dictionary<int, byte> byte_decoder;
+    protected new Dictionary<byte, int> byte_encoder = new();
+    protected new Dictionary<int, byte> byte_decoder = new();
 
     public override List<int> encode_ordinary_text(string text)
     {
+        text = text.Trim();
+        if (string.IsNullOrEmpty(text))
+            return new();
+
         // prepend space and replace all spaces to '▁'
         var piece = (" " + text).Replace(' ', '▁');
 
-        var merged = byte_pair_merge(piece, bpe_ranks);
-        var continuous_chars = new StringBuilder();
+        // split by runes when working with sentencepiece
+        var merged = byte_pair_merge(
+            piece.EnumerateRunes().Select(x => x.ToString()).ToArray(),
+            bpe_ranks);
 
         var ret = new List<int>();
-
-        void flush_chars()
-        {
-            if (continuous_chars.Length > 0)
-            {
-                var bytes = Encoding.UTF8.GetBytes(continuous_chars.ToString());
-                ret.AddRange(bytes.Select(x => byte_encoder[x]));
-                continuous_chars.Clear();
-            }
-        }
 
         foreach (var word in merged)
         {
             if (encoder.TryGetValue(word, out var token))
             {
-                flush_chars();
                 ret.Add(token);
             }
             else
             {
                 // byte fallback
-                // C# encodes string with UTF-16 internal structure
-                // so all chars must be concatenated.
-                continuous_chars.Append(word);
+                ret.AddRange(Encoding.UTF8.GetBytes(word)
+                    .Select(x => byte_encoder[x]));
             }
         }
-        flush_chars();
         return ret;
     }
 
@@ -102,8 +94,8 @@ public class SentencePieceBPE : BPE
             else
             {
                 flush_bytes();
-                var piece = decoder.GetValueOrDefault(id)
-                    ?? special_token_decoder.GetValueOrDefault(id)
+                var piece = special_token_decoder.GetValueOrDefault(id)
+                    ?? decoder.GetValueOrDefault(id)
                         ?? throw new Exception($"Unable to decode id {id}");
 
                 buffer.Append(piece);

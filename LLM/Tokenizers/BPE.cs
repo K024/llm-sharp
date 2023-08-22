@@ -1,7 +1,7 @@
 using System.Collections;
 using System.Text;
 using System.Text.RegularExpressions;
-
+using llm_sharp.LLM.Utils;
 
 namespace llm_sharp.LLM.Tokenizers;
 
@@ -11,7 +11,7 @@ public record BPEConfig
     public Dictionary<string, int> vocab { get; set; } = new();
     public List<string> merges { get; set; } = new();
     public Dictionary<string, int> special_tokens { get; set; } = new();
-    public string pattern { get; set; } = "";
+    public string pattern { get; set; } = "'s|'t|'re|'ve|'m|'ll|'d| ?\\p{L}+| ?\\p{N}+| ?[^\\s\\p{L}\\p{N}]+|\\s+(?!\\S)|\\s+";
 }
 
 public class BPE
@@ -39,12 +39,10 @@ public class BPE
         bs.AddRange(bs_others);
         cs.AddRange(cs_others);
 
-        var pairs = Enumerable.Zip(bs.Select(x => (byte)x), cs.Select(x => (char)x)).ToList();
+        var pairs = new Dictionary<byte, char>(Enumerable.Zip(bs, cs).Select(pair =>
+            KeyValuePair.Create((byte)pair.First, (char)pair.Second)));
 
-        return (
-            new(pairs.Select(pair => KeyValuePair.Create(pair.First, pair.Second))),
-            new(pairs.Select(pair => KeyValuePair.Create(pair.Second, pair.First)))
-        );
+        return (pairs, pairs.ReverseDictionary());
     }
 
     protected static Lazy<(Dictionary<byte, char>, Dictionary<char, byte>)> _bytes_to_unicode =>
@@ -54,7 +52,7 @@ public class BPE
     protected static Dictionary<char, byte> byte_decoder => _bytes_to_unicode.Value.Item2;
 
     protected static List<string> byte_pair_merge(
-        string piece,
+        string[] pieces,
         IReadOnlyDictionary<(string, string), int> bpe_ranks)
     {
         IEnumerable<(string, string)> get_pairs(IList<string> list)
@@ -67,7 +65,7 @@ public class BPE
             }
         }
 
-        var list = piece.Select(x => x.ToString()).ToList();
+        var list = pieces.ToList();
         while (list.Count > 1)
         {
             var (index, bigram, rank) = get_pairs(list)
@@ -107,29 +105,11 @@ public class BPE
             config.special_tokens.Keys.Select(x => Regex.Escape(x))
         ));
 
-        encoder = new(
-            config.vocab.Select(pair =>
-                KeyValuePair.Create(pair.Key, pair.Value))
-        );
+        encoder = config.vocab;
+        decoder = encoder.ReverseDictionary();
 
-        decoder = new(
-            encoder.Select(x => KeyValuePair.Create(x.Value, x.Key))
-        );
-
-        if (encoder.Count != decoder.Count)
-            throw new Exception("Possible duplicated rank id");
-
-        special_token_encoder = new(
-            config.special_tokens.Select(pair =>
-                KeyValuePair.Create(pair.Key, pair.Value))
-        );
-
-        special_token_decoder = new(
-            special_token_encoder.Select(x => KeyValuePair.Create(x.Value, x.Key))
-        );
-
-        if (special_token_encoder.Count != special_token_decoder.Count)
-            throw new Exception("Possible duplicated special_token id");
+        special_token_encoder = config.special_tokens;
+        special_token_decoder = special_token_encoder.ReverseDictionary();
 
         bpe_ranks = new(
             config.merges
@@ -155,8 +135,8 @@ public class BPE
     {
         get
         {
-            var piece = decoder.GetValueOrDefault(id)
-                ?? special_token_decoder.GetValueOrDefault(id)
+            var piece = special_token_decoder.GetValueOrDefault(id)
+                ?? decoder.GetValueOrDefault(id)
                     ?? throw new Exception($"Unable to decode id {id}");
             return piece;
         }
@@ -172,7 +152,9 @@ public class BPE
             var piece = Encoding.UTF8.GetBytes(match.Value)
                 .Select(x => byte_encoder[x]).ToArray();
 
-            var merged = byte_pair_merge(new(piece), bpe_ranks);
+            // it is safe to convert a char (in utf-16) to string
+            // because it's just mapped from utf-8 bytes (with max ranging 0 ~ 512)
+            var merged = byte_pair_merge(piece.Select(x => x.ToString()).ToArray(), bpe_ranks);
             ret.AddRange(merged.Select(x => encoder[x]));
         }
         return ret;
@@ -206,8 +188,8 @@ public class BPE
         var buffer = new StringBuilder();
         foreach (var id in ids)
         {
-            var piece = decoder.GetValueOrDefault(id)
-                ?? special_token_decoder.GetValueOrDefault(id)
+            var piece = special_token_decoder.GetValueOrDefault(id)
+                ?? decoder.GetValueOrDefault(id)
                     ?? throw new Exception($"Unable to decode id {id}");
 
             var decoded = Encoding.UTF8.GetString(

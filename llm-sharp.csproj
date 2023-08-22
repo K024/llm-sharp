@@ -9,12 +9,14 @@
     <SelfContained>true</SelfContained>
     <PublishSingleFile>true</PublishSingleFile>
     <RuntimeIdentifier>linux-x64</RuntimeIdentifier>
-    <InvariantGlobalization>true</InvariantGlobalization>
+    <!-- String.Normalize requires unicode data from icu -->
+    <!-- <InvariantGlobalization>true</InvariantGlobalization> -->
   </PropertyGroup>
 
   <ItemGroup>
     <PackageReference Include="Swashbuckle.AspNetCore" Version="6.5.0" />
     <PackageReference Include="TorchSharp" Version="0.100.4" />
+    <PackageReference Include="TupleAsJsonArray" Version="1.0.2" />
   </ItemGroup>
 
 </Project>

@@ -2,6 +2,7 @@ using System.Text;
 using System.Text.Json;
 using TorchSharp;
 using TorchSharp.Utils;
+using TupleAsJsonArray;
 
 namespace llm_sharp.LLM.Utils;
 
@@ -75,10 +76,7 @@ public class Safetensors : IDisposable
     {
         public string dtype { get; set; } = TensorDtype.F32;
         public List<long> shape { get; set; } = new();
-        public List<long> data_offsets { get; set; } = new();
-
-        public long begin() => data_offsets[0];
-        public long end() => data_offsets[1];
+        public (long begin, long end) data_offsets { get; set; } = new();
     }
 
 
@@ -113,10 +111,8 @@ public class Safetensors : IDisposable
             }
             else
             {
-                var tensorInfo = prop.Value.Deserialize<TensorInfo>()
+                var tensorInfo = prop.Value.Deserialize<TensorInfo>(serializerOptions)
                     ?? throw new ArgumentException(nameof(tensors));
-                if (tensorInfo.data_offsets.Count != 2)
-                    throw new Exception("Invalid tensor info");
                 tensors.Add(prop.Name, tensorInfo);
             }
         }
@@ -125,8 +121,8 @@ public class Safetensors : IDisposable
     public Tensor read_tensor(string key)
     {
         var tensorInfo = tensors[key];
-        var start = 8 + header_size + tensorInfo.begin();
-        var size = tensorInfo.end() - tensorInfo.begin();
+        var start = 8 + header_size + tensorInfo.data_offsets.begin;
+        var size = tensorInfo.data_offsets.end - tensorInfo.data_offsets.begin;
 
         if (stream.Position != start)
             stream.Seek(start, SeekOrigin.Begin);
@@ -199,7 +195,8 @@ public class Safetensors : IDisposable
 
     protected static JsonSerializerOptions serializerOptions = new JsonSerializerOptions
     {
-        Encoder = System.Text.Encodings.Web.JavaScriptEncoder.UnsafeRelaxedJsonEscaping
+        Converters = { new TupleConverterFactory() },
+        Encoder = System.Text.Encodings.Web.JavaScriptEncoder.UnsafeRelaxedJsonEscaping,
     };
 
     protected static int nextMultipleOfN(int num, int n)
@@ -225,7 +222,7 @@ public class Safetensors : IDisposable
             {
                 dtype = TensorDtype.get_type(pair.Value),
                 shape = pair.Value.shape.ToList(),
-                data_offsets = new() { begin, end },
+                data_offsets = (begin, end),
             };
             headerJson.Add(pair.Key, info);
             offset = end;

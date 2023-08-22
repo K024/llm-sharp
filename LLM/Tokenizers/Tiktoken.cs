@@ -1,6 +1,7 @@
 using System.Collections;
 using System.Text;
 using System.Text.RegularExpressions;
+using llm_sharp.LLM.Utils;
 
 namespace llm_sharp.LLM.Tokenizers;
 
@@ -17,7 +18,7 @@ public record TikTokenConfig
     public List<string> eos_tokens { get; set; } = new();
     public Dictionary<string, int> ranks { get; set; } = new();
     public Dictionary<string, int> special_tokens { get; set; } = new();
-    public string pattern { get; set; } = "";
+    public string pattern { get; set; } = "'s|'t|'re|'ve|'m|'ll|'d| ?\\p{L}+| ?\\p{N}+| ?[^\\s\\p{L}\\p{N}]+|\\s+(?!\\S)|\\s+";
 }
 
 public class TikToken
@@ -131,26 +132,14 @@ public class TikToken
                 KeyValuePair.Create(Convert.FromBase64String(pair.Key), pair.Value)),
             new ByteArrayComparer()
         );
-
-        decoder = new(
-            encoder.Select(x => KeyValuePair.Create(x.Value, x.Key))
-        );
-
-        if (encoder.Count != decoder.Count)
-            throw new Exception("Possible duplicated rank id");
+        decoder = encoder.ReverseDictionary();
 
         special_token_encoder = new(
             config.special_tokens.Select(pair =>
                 KeyValuePair.Create(Encoding.UTF8.GetBytes(pair.Key), pair.Value)),
             new ByteArrayComparer()
         );
-
-        special_token_decoder = new(
-            special_token_encoder.Select(x => KeyValuePair.Create(x.Value, x.Key))
-        );
-
-        if (special_token_encoder.Count != special_token_decoder.Count)
-            throw new Exception("Possible duplicated special_token id");
+        special_token_decoder = special_token_encoder.ReverseDictionary();
     }
 
     public virtual int Count => encoder.Count + special_token_encoder.Count;
@@ -171,8 +160,8 @@ public class TikToken
     {
         get
         {
-            var piece = decoder.GetValueOrDefault(id)
-                ?? special_token_decoder.GetValueOrDefault(id)
+            var piece = special_token_decoder.GetValueOrDefault(id)
+                ?? decoder.GetValueOrDefault(id)
                     ?? throw new Exception($"Unable to decode id {id}");
             return Encoding.UTF8.GetString(piece);
         }
@@ -225,8 +214,8 @@ public class TikToken
         var buffer = new List<byte>(ids.Count * 2);
         foreach (var id in ids)
         {
-            var bytes = decoder.GetValueOrDefault(id)
-                ?? special_token_decoder.GetValueOrDefault(id)
+            var bytes = special_token_decoder.GetValueOrDefault(id)
+                ?? decoder.GetValueOrDefault(id)
                     ?? throw new Exception($"Unable to decode id {id}");
             buffer.AddRange(bytes);
         }

@@ -5,6 +5,7 @@ using System.Text.Json;
 using System.Threading.Channels;
 using Microsoft.Extensions.FileSystemGlobbing;
 using TorchSharp;
+using TupleAsJsonArray;
 
 namespace llm_sharp.LLM.Utils;
 
@@ -24,6 +25,11 @@ public record GenerationConfig
 
 public abstract class LLM
 {
+    public static JsonSerializerOptions TupleJsonSerializerOptions { get; } = new()
+    {
+        Converters = { new TupleConverterFactory() },
+    };
+
     public virtual bool can_chat => false;
 
     public virtual IEnumerable<string> chat(History history, string input, GenerationConfig? config = null)
@@ -128,7 +134,8 @@ public abstract class LLM<TModel, TModelConfig, TTokenizer, TTokenizerConfig> : 
         ) ?? throw new Exception($"The Model should have a constructor(TModelConfig, torch.ScalarType?, torch.Device?)");
 
         var modelConfig = JsonSerializer.Deserialize<TModelConfig>(
-            File.ReadAllBytes(Path.Combine(path, model_config_file))
+            File.ReadAllBytes(Path.Combine(path, model_config_file)),
+            TupleJsonSerializerOptions
         ) ?? throw new ArgumentException(nameof(TModelConfig));
 
         var model = (TModel)createModel.Invoke(new object?[] { modelConfig, dtype, device })
@@ -149,7 +156,8 @@ public abstract class LLM<TModel, TModelConfig, TTokenizer, TTokenizerConfig> : 
         ) ?? throw new Exception($"The Model should have a constructor(TTokenizerConfig)");
 
         var tokenizerConfig = JsonSerializer.Deserialize<TTokenizerConfig>(
-            File.ReadAllBytes(Path.Combine(path, tokenizer_config_file))
+            File.ReadAllBytes(Path.Combine(path, tokenizer_config_file)),
+            TupleJsonSerializerOptions
         ) ?? throw new ArgumentException(nameof(TTokenizerConfig));
 
         var tokenizer = (TTokenizer)createTokenizer.Invoke(new object?[] { tokenizerConfig })

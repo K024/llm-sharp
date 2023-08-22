@@ -1,12 +1,15 @@
 using llm_sharp.Services;
 using llm_sharp.LLM.Utils;
+using TupleAsJsonArray;
 
 var builder = WebApplication.CreateBuilder(args);
 
-builder.Services.AddControllers();
+builder.Services.AddControllers().AddJsonOptions(options =>
+    {
+        options.JsonSerializerOptions.Converters.Add(new TupleConverterFactory());
+    });
 builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddSwaggerGen();
-
 builder.Services.AddCors(cors => cors.AddDefaultPolicy(policy =>
     {
         policy.AllowAnyOrigin().AllowAnyMethod();
