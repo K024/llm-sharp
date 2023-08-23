@@ -1,6 +1,7 @@
 using llm_sharp.Services;
 using llm_sharp.LLM.Utils;
 using TupleAsJsonArray;
+using System.Text.Json;
 
 var builder = WebApplication.CreateBuilder(args);
 

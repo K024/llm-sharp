@@ -27,6 +27,7 @@ public abstract class LLM
 {
     public static JsonSerializerOptions TupleJsonSerializerOptions { get; } = new()
     {
+        Encoder = System.Text.Encodings.Web.JavaScriptEncoder.UnsafeRelaxedJsonEscaping,
         Converters = { new TupleConverterFactory() },
     };
 

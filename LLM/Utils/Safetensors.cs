@@ -1,5 +1,6 @@
 using System.Text;
 using System.Text.Json;
+using Microsoft.AspNetCore.Routing.Template;
 using TorchSharp;
 using TorchSharp.Utils;
 using TupleAsJsonArray;
@@ -8,6 +9,67 @@ namespace llm_sharp.LLM.Utils;
 
 using Tensor = torch.Tensor;
 using ScalarType = torch.ScalarType;
+
+public class StateDictConverter
+{
+    protected IReadOnlyDictionary<string, string> converts;
+    protected Dictionary<string, RouteTemplate> sourceTemplates;
+    protected Dictionary<string, RouteTemplate> targetTemplates;
+    protected Dictionary<string, TemplateMatcher> sourceMatchers;
+
+    public StateDictConverter(IReadOnlyDictionary<string, string> converts)
+    {
+        this.converts = converts;
+
+        sourceTemplates = new(converts.Keys.Select(x =>
+            KeyValuePair.Create(x, TemplateParser.Parse("/" + x))));
+
+        targetTemplates = new(converts.Values.Select(x =>
+            KeyValuePair.Create(x, TemplateParser.Parse("/" + x))));
+
+        sourceMatchers = new(sourceTemplates.Select(x =>
+            KeyValuePair.Create(x.Key, new TemplateMatcher(x.Value, new()))));
+    }
+
+    protected static string BindTemplateValues(RouteTemplate template, RouteValueDictionary values)
+    {
+        var result = new StringBuilder();
+        foreach (var (index, segment) in template.Segments.Select((x, i) => (i, x)))
+        {
+            result.Append("/");
+            foreach (var part in segment.Parts)
+            {
+                if (part.IsLiteral)
+                    result.Append(part.Text);
+                else if (part.IsParameter)
+                    result.Append(values[part.Name!]);
+                else
+                    throw new Exception($"Unsupported template '{template.TemplateText}'");
+            }
+        }
+        return result.ToString();
+    }
+
+    public bool TryConvert(string name, out string target)
+    {
+        // append "/" to make a valid path
+        var path = new PathString("/" + name);
+        var values = new RouteValueDictionary();
+        foreach (var pair in sourceMatchers)
+        {
+            if (pair.Value.TryMatch(path, values))
+            {
+                var targetTemplate = targetTemplates[converts[pair.Key]];
+                var bound = BindTemplateValues(targetTemplate, values);
+                // remove prepended "/"
+                target = bound[1..];
+                return true;
+            }
+        }
+        target = null!;
+        return false;
+    }
+}
 
 public class Safetensors : IDisposable
 {
