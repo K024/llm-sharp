@@ -9,6 +9,8 @@ Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "llm-sharp", "App\llm-sharp.
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Tests", "Tests\Tests.csproj", "{19CC67B3-8339-4559-908C-A08D29433D77}"
 EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "NativeOps", "NativeOps\NativeOps.csproj", "{9E0F6BE0-5D7E-4E38-81B0-0941B3363F29}"
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|Any CPU = Debug|Any CPU
@@ -30,5 +32,9 @@ Global
 		{19CC67B3-8339-4559-908C-A08D29433D77}.Debug|Any CPU.Build.0 = Debug|Any CPU
 		{19CC67B3-8339-4559-908C-A08D29433D77}.Release|Any CPU.ActiveCfg = Release|Any CPU
 		{19CC67B3-8339-4559-908C-A08D29433D77}.Release|Any CPU.Build.0 = Release|Any CPU
+		{9E0F6BE0-5D7E-4E38-81B0-0941B3363F29}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{9E0F6BE0-5D7E-4E38-81B0-0941B3363F29}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{9E0F6BE0-5D7E-4E38-81B0-0941B3363F29}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{9E0F6BE0-5D7E-4E38-81B0-0941B3363F29}.Release|Any CPU.Build.0 = Release|Any CPU
 	EndGlobalSection
 EndGlobal

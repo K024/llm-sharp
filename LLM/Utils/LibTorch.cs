@@ -54,8 +54,8 @@ public static class LibTorchLoader
 
             if (RuntimeInformation.IsOSPlatform(OSPlatform.Windows))
             {
-                shell = "cmd.exe";
-                args.Add("/c");
+                shell = "powershell.exe";
+                args.Add("-Command");
                 args.Add(command);
             }
             else
@@ -94,7 +94,7 @@ public static class LibTorchLoader
 
     private static string? FindInPythonSitePackages()
     {
-        var sysPath = RunCommand("python3 -c \"import sys, json; print(json.dumps(sys.path))\"");
+        var sysPath = RunCommand("python -c \"import sys, json; print(json.dumps(sys.path))\"");
         if (sysPath is null)
             return null;
 
