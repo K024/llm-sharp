@@ -1,7 +1,8 @@
 using llm_sharp.Services;
 using llm_sharp.LLM.Utils;
 using TupleAsJsonArray;
-using System.Text.Json;
+
+LibTorchLoader.EnsureLoaded();
 
 var builder = WebApplication.CreateBuilder(args);
 

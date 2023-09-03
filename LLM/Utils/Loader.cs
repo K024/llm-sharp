@@ -195,7 +195,9 @@ public abstract partial class LLM<TModel, TModelConfig, TTokenizer, TTokenizerCo
 
     public void save_pretrained(string basePath, Func<int, int, string> shardTemplate, int? shard_size = null)
     {
-        var state_dict = (this as torch.nn.Module)!.state_dict();
+        Directory.CreateDirectory(basePath);
+
+        var state_dict = (model as torch.nn.Module)!.state_dict();
         var max_size = shard_size ?? int.MaxValue;
 
         var weight_shard = new Dictionary<string, int>();

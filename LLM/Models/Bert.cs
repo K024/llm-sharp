@@ -26,9 +26,9 @@ public record BertConfig
 
     public virtual long type_vocab_size { get; set; } = 4;
     public virtual long max_sequence_length { get; set; } = 2048;
-    public virtual List<string> pooling_mode { get; set; } = new() { "pooler" };
+    public virtual List<string> pooling_mode { get; set; } = new() { BertPooler.POOLER };
     public virtual int classifier_classes { get; set; } = 0;
-    public virtual string classifier_mode { get; set; } = "sequence";
+    public virtual string classifier_mode { get; set; } = BertModel.SEQUENCE;
 }
 
 public class BertEmbeddings : nn.Module<Tensor?, Tensor?, Tensor?, Tensor?, Tensor>
@@ -351,6 +351,9 @@ public class BertModel : nn.Module<BertModelInput, BertModelOutput>
     public BertPooler? pooler;
     public CustomLinear? classifier;
 
+    public const string SEQUENCE = "sequence";
+    public const string TOKEN = "token";
+
     public BertModel(BertConfig config, torch.ScalarType? dtype = null, torch.Device? device = null) : base("BertModel")
     {
         this.config = config;
@@ -435,10 +438,13 @@ public class BertModel : nn.Module<BertModelInput, BertModelOutput>
 
         if (classifier is not null)
         {
-            if (config.classifier_mode != "sequence")
+            if (config.classifier_mode == TOKEN)
                 classifier_output = classifier.call(h);
-            else if (pooler_output is not null)
-                classifier_output = classifier.call(pooler_output);
+            else if (config.classifier_mode == SEQUENCE)
+                classifier_output = classifier.call(pooler_output
+                    ?? throw new Exception("no pooler output for sequence classification"));
+            else
+                throw new Exception($"Unknown classifier_mode {config.classifier_mode}");
 
             if (classifier_output is not null)
                 outer_scope.MoveToOuter(classifier_output);
