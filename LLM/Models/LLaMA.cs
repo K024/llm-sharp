@@ -344,14 +344,24 @@ public class LLaMABlock : nn.Module<
     }
 }
 
-public class LLaMAModel : nn.Module<
-    Tensor?, // input_ids
-    Tensor?, // input_embeddings
-    Tensor?, // attention_mask
-    Tensor?, // position_ids
-    Tensor?, // labels
-    List<(Tensor k_cache, Tensor v_cache)>?,
-    (Tensor? loss, Tensor output, List<(Tensor k_cache, Tensor v_cache)> current_key_values)>
+public record LLaMAModelInput : BatchEncoding
+{
+    public Tensor? input_ids { get; set; }
+    public Tensor? input_embeddings { get; set; }
+    public Tensor? attention_mask { get; set; }
+    public Tensor? position_ids { get; set; }
+    public Tensor? labels { get; set; }
+    public List<(Tensor k_cache, Tensor v_cache)>? past_key_values { get; set; }
+}
+
+public record LLaMAModelOutput : BatchEncoding
+{
+    public Tensor? loss { get; set; }
+    public Tensor logits { get; set; } = null!;
+    public List<(Tensor k_cache, Tensor v_cache)> current_key_values { get; set; } = null!;
+}
+
+public class LLaMAModel : nn.Module<LLaMAModelInput, LLaMAModelOutput>
 {
     public LLaMAConfig config;
     public CustomEmbedding word_embedding;
@@ -383,17 +393,23 @@ public class LLaMAModel : nn.Module<
         RegisterComponents();
     }
 
-    public (Tensor input_embeddings, Tensor attention_mask, (Tensor cos, Tensor sin) freqs_cis) prepare_input(
-        Tensor? input_ids,
-        Tensor? input_embeddings,
-        Tensor? attention_mask,
-        Tensor? position_ids,
-        List<(Tensor k_cache, Tensor v_cache)>? past_key_values)
+    public (
+        Tensor input_embeddings,
+        Tensor attention_mask,
+        (Tensor cos, Tensor sin) freqs_cis
+    ) prepare_input(LLaMAModelInput input)
     {
         using var scope = torch.NewDisposeScope();
 
         torch.Device device;
         long n_batch, n_seq, n_seq_new, n_seq_past;
+
+        var input_ids = input.input_ids;
+        var input_embeddings = input.input_embeddings;
+        var attention_mask = input.attention_mask;
+        var position_ids = input.position_ids;
+        var labels = input.labels;
+        var past_key_values = input.past_key_values;
 
         if (input_embeddings is null)
         {
@@ -446,13 +462,7 @@ public class LLaMAModel : nn.Module<
         );
     }
 
-    public override (Tensor? loss, Tensor output, List<(Tensor k_cache, Tensor v_cache)> current_key_values) forward(
-        Tensor? input_ids,
-        Tensor? input_embeddings,
-        Tensor? attention_mask,
-        Tensor? position_ids,
-        Tensor? labels,
-        List<(Tensor k_cache, Tensor v_cache)>? past_key_values)
+    public override LLaMAModelOutput forward(LLaMAModelInput input)
     {
         using var outer_scope = torch.NewDisposeScope();
 
@@ -460,13 +470,7 @@ public class LLaMAModel : nn.Module<
             prepared_input_embeddings,
             prepared_attention_mask,
             freqs_cis
-        ) = prepare_input(
-            input_ids,
-            input_embeddings,
-            attention_mask,
-            position_ids,
-            past_key_values
-        );
+        ) = prepare_input(input);
 
         // forward layers
         var h = dropout.call(prepared_input_embeddings);
@@ -475,7 +479,7 @@ public class LLaMAModel : nn.Module<
         {
             using var scope = torch.NewDisposeScope();
 
-            var kv_cache = past_key_values?[i];
+            var kv_cache = input.past_key_values?[i];
             (h, kv_cache) = layer.call(
                 h,
                 freqs_cis,
@@ -493,23 +497,24 @@ public class LLaMAModel : nn.Module<
         var output = lm_head.call(h);
 
         Tensor? loss = null;
-        if (labels is not null)
+        if (input.labels is not null)
         {
             using var scope = torch.NewDisposeScope();
 
             var n_classes = config.vocab_size;
             var shift_logits = output[.., ..-1, ..].contiguous().to(torch.float32);
-            var shift_labels = labels[.., 1..].contiguous();
+            var shift_labels = input.labels[.., 1..].contiguous();
             loss = F.cross_entropy(shift_logits.view(-1, n_classes), shift_labels.view(-1));
 
             scope.MoveToOuter(loss);
         }
 
         outer_scope.MoveToOuter(current_key_values.SelectMany(x => new[] { x.k_cache, x.v_cache }));
-        return (
-            loss is not null ? outer_scope.MoveToOuter(loss) : null,
-            outer_scope.MoveToOuter(output),
-            current_key_values
-        );
+        return new()
+        {
+            logits = outer_scope.MoveToOuter(output),
+            loss = loss is not null ? outer_scope.MoveToOuter(loss) : null,
+            current_key_values = current_key_values
+        };
     }
 }

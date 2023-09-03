@@ -39,8 +39,7 @@ public class BPE
         bs.AddRange(bs_others);
         cs.AddRange(cs_others);
 
-        var pairs = new Dictionary<byte, char>(Enumerable.Zip(bs, cs).Select(pair =>
-            KeyValuePair.Create((byte)pair.First, (char)pair.Second)));
+        var pairs = Enumerable.Zip(bs, cs).ToDictionary(x => (byte)x.First, x => (char)x.Second);
 
         return (pairs, pairs.ReverseDictionary());
     }
@@ -111,11 +110,9 @@ public class BPE
         special_token_encoder = config.special_tokens;
         special_token_decoder = special_token_encoder.ReverseDictionary();
 
-        bpe_ranks = new(
-            config.merges
-                .Select(x => x.Split(' ', 2)).Select(x => (x[0], x[1]))
-                .Select((x, rank) => KeyValuePair.Create(x, rank))
-        );
+        bpe_ranks = config.merges
+            .Select(x => x.Split(' ', 2)).Select((x, rank) => (merge: (x[0], x[1]), rank))
+            .ToDictionary(x => x.merge, x => x.rank);
     }
 
     public virtual int Count => encoder.Count + special_token_encoder.Count;

@@ -11,7 +11,7 @@ public class UtilsTests
         var converts = new Dictionary<string, string>(){
             { "layers.{layer}.attn.qkv_proj.{name}", "transformers.layers.{layer}.attention.qkv_linear.{name}" },
         };
-        var converter = new StateDictConverter(converts);
+        var converter = new StateDictConverter.TemplateNameConverter(converts);
 
         var source = "layers.11.attn.qkv_proj.some_module.bias";
 

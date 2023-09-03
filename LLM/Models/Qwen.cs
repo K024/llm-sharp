@@ -19,11 +19,11 @@ public class Qwen : GenerativeLM<LLaMAModel, LLaMAConfig, TikToken, TikTokenConf
         }
     }
 
-    public virtual torch.Device? device { get; protected set; }
-    public virtual LLaMAModel model { get; init; }
-    public virtual LLaMAConfig model_config { get; init; }
-    public virtual TikToken tokenizer { get; init; }
-    public virtual TikTokenConfig tokenizer_config { get; init; }
+    public override torch.Device? device { get; protected set; }
+    public override LLaMAModel model { get; init; }
+    public override LLaMAConfig model_config { get; init; }
+    public override TikToken tokenizer { get; init; }
+    public override TikTokenConfig tokenizer_config { get; init; }
 
 #nullable disable
     protected Qwen() { }
@@ -76,24 +76,21 @@ public class Qwen : GenerativeLM<LLaMAModel, LLaMAConfig, TikToken, TikTokenConf
 
         var input_ids = torch.tensor(tokens, dtype: torch.int64, device: device).unsqueeze(0);
 
-        var (_, logits, current_key_values) = model.call(
-            input_ids,
-            null, // input_embeddings
-            null, // attention_mask
-            null, // position_ids
-            null, // labels
-            past_key_values
-        );
+        var output = model.call(new()
+        {
+            input_ids = input_ids,
+            past_key_values = past_key_values,
+        });
 
         var next = top_p_top_k_sampling(
-            logits[0, ^1], config.top_k, config.top_p, config.temperature
+            output.logits[0, ^1], config.top_k, config.top_p, config.temperature
         );
         var next_token = (int)next.item<long>();
 
-        scope.MoveToOuter(current_key_values.SelectMany(x => new[] { x.k_cache, x.v_cache }));
+        scope.MoveToOuter(output.current_key_values.SelectMany(x => new[] { x.k_cache, x.v_cache }));
         return (
             next_token,
-            new() { past_key_values = current_key_values }
+            new() { past_key_values = output.current_key_values }
         );
     }
 

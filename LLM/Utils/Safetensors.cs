@@ -1,6 +1,5 @@
 using System.Text;
 using System.Text.Json;
-using Microsoft.AspNetCore.Routing.Template;
 using TorchSharp;
 using TorchSharp.Utils;
 using TupleAsJsonArray;
@@ -9,67 +8,6 @@ namespace llm_sharp.LLM.Utils;
 
 using Tensor = torch.Tensor;
 using ScalarType = torch.ScalarType;
-
-public class StateDictConverter
-{
-    protected IReadOnlyDictionary<string, string> converts;
-    protected Dictionary<string, RouteTemplate> sourceTemplates;
-    protected Dictionary<string, RouteTemplate> targetTemplates;
-    protected Dictionary<string, TemplateMatcher> sourceMatchers;
-
-    public StateDictConverter(IReadOnlyDictionary<string, string> converts)
-    {
-        this.converts = converts;
-
-        sourceTemplates = new(converts.Keys.Select(x =>
-            KeyValuePair.Create(x, TemplateParser.Parse("/" + x))));
-
-        targetTemplates = new(converts.Values.Select(x =>
-            KeyValuePair.Create(x, TemplateParser.Parse("/" + x))));
-
-        sourceMatchers = new(sourceTemplates.Select(x =>
-            KeyValuePair.Create(x.Key, new TemplateMatcher(x.Value, new()))));
-    }
-
-    protected static string BindTemplateValues(RouteTemplate template, RouteValueDictionary values)
-    {
-        var result = new StringBuilder();
-        foreach (var (index, segment) in template.Segments.Select((x, i) => (i, x)))
-        {
-            result.Append("/");
-            foreach (var part in segment.Parts)
-            {
-                if (part.IsLiteral)
-                    result.Append(part.Text);
-                else if (part.IsParameter)
-                    result.Append(values[part.Name!]);
-                else
-                    throw new Exception($"Unsupported template '{template.TemplateText}'");
-            }
-        }
-        return result.ToString();
-    }
-
-    public bool TryConvert(string name, out string target)
-    {
-        // append "/" to make a valid path
-        var path = new PathString("/" + name);
-        var values = new RouteValueDictionary();
-        foreach (var pair in sourceMatchers)
-        {
-            if (pair.Value.TryMatch(path, values))
-            {
-                var targetTemplate = targetTemplates[converts[pair.Key]];
-                var bound = BindTemplateValues(targetTemplate, values);
-                // remove prepended "/"
-                target = bound[1..];
-                return true;
-            }
-        }
-        target = null!;
-        return false;
-    }
-}
 
 public class Safetensors : IDisposable
 {
@@ -207,9 +145,22 @@ public class Safetensors : IDisposable
         stream.Dispose();
     }
 
-    protected List<string> load_to_state_dict(Dictionary<string, Tensor> state_dict)
+    public IEnumerable<(string, Tensor)> load_tensors()
     {
-        using var nograd = torch.no_grad();
+        foreach (var key in Keys.ToList())
+        {
+            yield return (key, read_tensor(key));
+        }
+    }
+
+    public Dictionary<string, Tensor> load_tensors_dict()
+    {
+        return load_tensors().ToDictionary(x => x.Item1, x => x.Item2);
+    }
+
+    public List<string> load_to_state_dict(Dictionary<string, Tensor> state_dict)
+    {
+        using var no_grad = torch.no_grad();
         var unusedKeys = new List<string>();
         foreach (var key in Keys.ToList())
         {
@@ -232,28 +183,6 @@ public class Safetensors : IDisposable
         }
         return unusedKeys;
     }
-
-    public static void load_state_dict(Dictionary<string, Tensor> state_dict, params string[] paths)
-    {
-        var cloned = new Dictionary<string, Tensor>(state_dict);
-        var unusedKeys = new List<string>();
-
-        foreach (var (idx, path) in paths.Select((x, i) => (i + 1, x)))
-        {
-            Console.Write($"\rloading {path} [{idx}/{paths.Length}] ");
-            using var tensors = new Safetensors(path);
-            var unused = tensors.load_to_state_dict(cloned);
-            unusedKeys.AddRange(unused);
-        }
-        Console.WriteLine();
-
-        if (unusedKeys.Count > 0)
-            Console.WriteLine($"Unused weights: {string.Join(',', unusedKeys)}");
-
-        if (cloned.Count > 0)
-            Console.WriteLine($"Uninitialized states: {string.Join(',', cloned.Keys)}");
-    }
-
 
     protected static JsonSerializerOptions serializerOptions = new JsonSerializerOptions
     {
@@ -310,44 +239,5 @@ public class Safetensors : IDisposable
 
         foreach (var pair in tensorList)
             writer.Write(pair.Value.bytes);
-    }
-
-    public static void save_state_dict(Dictionary<string, Tensor> state_dict, Func<int, int, string> pathTemplate, int? shard_size = null)
-    {
-        var max_size = shard_size ?? int.MaxValue;
-
-        var weight_shard = new Dictionary<string, int>();
-
-        var current_shard = 0;
-        var current_size = 0;
-        foreach (var pair in state_dict)
-        {
-            var size = pair.Value.bytes.Length;
-            if (size > max_size)
-                throw new Exception($"Unable to save tensor {pair.Key} with shard size limit {max_size}");
-
-            if (current_size + size > max_size)
-            {
-                current_shard += 1;
-                current_size = 0;
-            }
-
-            current_size += size;
-            weight_shard.Add(pair.Key, current_shard);
-        }
-
-        var total_shards = current_shard + 1;
-        foreach (var shard in Enumerable.Range(0, total_shards))
-        {
-            var path = pathTemplate(shard, total_shards);
-            Console.Write($"\rsaving {path} [{shard + 1}/{total_shards}] ");
-
-            var tensors = new Dictionary<string, Tensor>(
-                weight_shard.Where(x => x.Value == shard)
-                    .Select(x => KeyValuePair.Create(x.Key, state_dict[x.Key]))
-            );
-            save_tensors(tensors, path);
-        }
-        Console.WriteLine();
     }
 }

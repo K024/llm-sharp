@@ -1,11 +1,7 @@
 using System.Diagnostics;
-using System.Reflection;
 using System.Text;
-using System.Text.Json;
 using System.Threading.Channels;
-using Microsoft.Extensions.FileSystemGlobbing;
 using TorchSharp;
-using TupleAsJsonArray;
 
 namespace llm_sharp.LLM.Utils;
 
@@ -23,14 +19,8 @@ public record GenerationConfig
     public virtual List<string> eos_tokens { get; set; } = new();
 }
 
-public abstract class LLM
+public abstract partial class LLM
 {
-    public static JsonSerializerOptions TupleJsonSerializerOptions { get; } = new()
-    {
-        Encoder = System.Text.Encodings.Web.JavaScriptEncoder.UnsafeRelaxedJsonEscaping,
-        Converters = { new TupleConverterFactory() },
-    };
-
     public virtual bool can_chat => false;
 
     public virtual IEnumerable<string> chat(History history, string input, GenerationConfig? config = null)
@@ -83,89 +73,20 @@ public abstract class LLM
     {
         throw new NotImplementedException();
     }
-
-    public static LLM from_pretrained(
-        string classHint,
-        string path,
-        torch.ScalarType? dtype = null,
-        torch.Device? device = null,
-        Assembly? assembly = null)
-    {
-        var types = (assembly ?? typeof(LLM).Assembly).GetTypes();
-
-        var type = types.Where(x =>
-            x.Name == classHint
-            && x.IsClass
-            && !x.IsAbstract
-            && x.IsSubclassOf(typeof(LLM))
-        )
-            .FirstOrDefault()
-            ?? throw new Exception($"Unable to find class '{classHint}'. Try give the correct Assembly");
-
-        var type_from_pretrained = type.GetMethod(
-            "from_pretrained",
-            BindingFlags.Static | BindingFlags.Public,
-            new[] { typeof(string), typeof(torch.ScalarType?), typeof(torch.Device) }
-        ) ?? throw new Exception($"The LLM should have a public static from_pretrained(string, torch.ScalarType?, torch.Device?) method");
-
-        var result = type_from_pretrained.Invoke(null, new object?[] { path, dtype, device })
-            ?? throw new Exception($"Unable to create class {classHint} with from_pretrained");
-
-        return (LLM)result;
-    }
 }
 
-public abstract class LLM<TModel, TModelConfig, TTokenizer, TTokenizerConfig> : LLM
+
+public abstract partial class LLM<TModel, TModelConfig, TTokenizer, TTokenizerConfig> : LLM
     where TModel : class
     where TModelConfig : class
     where TTokenizer : class
     where TTokenizerConfig : class
 {
-    public const string model_config_file = "model_config.json";
-    public const string tokenizer_config_file = "tokenizer_config.json";
-    public const string model_weights_pattern = "*.safetensors";
-
-    public static (TModel, TModelConfig) model_from_pretrained(
-        string path,
-        torch.ScalarType? dtype = null,
-        torch.Device? device = null)
-    {
-        var createModel = typeof(TModel).GetConstructor(
-            new[] { typeof(TModelConfig), typeof(torch.ScalarType?), typeof(torch.Device) }
-        ) ?? throw new Exception($"The Model should have a constructor(TModelConfig, torch.ScalarType?, torch.Device?)");
-
-        var modelConfig = JsonSerializer.Deserialize<TModelConfig>(
-            File.ReadAllBytes(Path.Combine(path, model_config_file)),
-            TupleJsonSerializerOptions
-        ) ?? throw new ArgumentException(nameof(TModelConfig));
-
-        var model = (TModel)createModel.Invoke(new object?[] { modelConfig, dtype, device })
-            ?? throw new NullReferenceException();
-
-        var state_dict = (model as torch.nn.Module)!.state_dict();
-        var weight_files = new Matcher().AddInclude(model_weights_pattern).GetResultsInFullPath(path);
-        Safetensors.load_state_dict(state_dict, weight_files.ToArray());
-
-        return (model, modelConfig);
-    }
-
-    public static (TTokenizer, TTokenizerConfig) tokenizer_from_pretrained(
-        string path)
-    {
-        var createTokenizer = typeof(TTokenizer).GetConstructor(
-            new[] { typeof(TTokenizerConfig) }
-        ) ?? throw new Exception($"The Model should have a constructor(TTokenizerConfig)");
-
-        var tokenizerConfig = JsonSerializer.Deserialize<TTokenizerConfig>(
-            File.ReadAllBytes(Path.Combine(path, tokenizer_config_file)),
-            TupleJsonSerializerOptions
-        ) ?? throw new ArgumentException(nameof(TTokenizerConfig));
-
-        var tokenizer = (TTokenizer)createTokenizer.Invoke(new object?[] { tokenizerConfig })
-            ?? throw new NullReferenceException();
-
-        return (tokenizer, tokenizerConfig);
-    }
+    public abstract torch.Device? device { get; protected set; }
+    public abstract TModel model { get; init; }
+    public abstract TModelConfig model_config { get; init; }
+    public abstract TTokenizer tokenizer { get; init; }
+    public abstract TTokenizerConfig tokenizer_config { get; init; }
 }
 
 public abstract class GenerativeLM<TModel, TModelConfig, TTokenizer, TTokenizerConfig, TState>

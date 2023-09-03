@@ -127,18 +127,16 @@ public class TikToken
             config.special_tokens.Keys.Select(x => Regex.Escape(x))
         ));
 
-        encoder = new(
-            config.ranks.Select(pair =>
-                KeyValuePair.Create(Convert.FromBase64String(pair.Key), pair.Value)),
-            new ByteArrayComparer()
-        );
+        encoder = config.ranks.ToDictionary(x =>
+            Encoding.UTF8.GetBytes(x.Key),
+            x => x.Value,
+            new ByteArrayComparer());
         decoder = encoder.ReverseDictionary();
 
-        special_token_encoder = new(
-            config.special_tokens.Select(pair =>
-                KeyValuePair.Create(Encoding.UTF8.GetBytes(pair.Key), pair.Value)),
-            new ByteArrayComparer()
-        );
+        special_token_encoder = config.special_tokens.ToDictionary(x =>
+            Encoding.UTF8.GetBytes(x.Key),
+            x => x.Value,
+            new ByteArrayComparer());
         special_token_decoder = special_token_encoder.ReverseDictionary();
     }
 

@@ -8,7 +8,7 @@ public static class Extensions
         where TValue : notnull
     {
         // will throws if has duplicated key
-        return new(dict.Select(pair => KeyValuePair.Create(pair.Value, pair.Key)));
+        return new(dict.ToDictionary(x => x.Value, x => x.Key));
     }
 
     public static void Deconstruct<T>(this T[] srcArray, out T a0)

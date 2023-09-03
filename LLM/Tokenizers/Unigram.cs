@@ -87,7 +87,8 @@ public class Unigram
             config.special_tokens.Keys.Select(x => Regex.Escape(x))
         ));
 
-        encoder = new(config.vocab.Select((pair, index) => KeyValuePair.Create(pair.Item1, index)));
+        encoder = config.vocab.Select((pair, index) => (key: pair.Item1, index))
+            .ToDictionary(x => x.key, x => x.index);
         decoder = encoder.ReverseDictionary();
 
         special_token_encoder = config.special_tokens;
@@ -96,7 +97,7 @@ public class Unigram
         trie = new();
         trie.AddRange(encoder.Keys.Select(x => x.EnumerateRunes().AsEnumerable()));
 
-        log_probs = new(config.vocab.Select((pair, index) => KeyValuePair.Create(pair.Item1, pair.Item2)));
+        log_probs = config.vocab.ToDictionary(x => x.Item1, x => x.Item2);
         min_log_prob = log_probs.Values.Min();
 
         if (config.precompiled_charsmap is not null)
