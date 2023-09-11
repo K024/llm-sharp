@@ -469,7 +469,7 @@ public class BertEncoder : MaskedLM<BertModel, BertConfig, WordPiece, WordPieceC
 
 #nullable disable
     protected BertEncoder() { }
-#nullable enable
+#nullable restore
 
     public virtual BertEncoder to(torch.Device? device)
     {

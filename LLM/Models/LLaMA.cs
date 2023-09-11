@@ -42,6 +42,15 @@ public class CustomLinear : nn.Module<Tensor, Tensor>
         // skips init
         RegisterComponents();
     }
+    public CustomLinear(
+        Parameter weight,
+        Parameter? bias = null
+    ) : base("CustomLinear")
+    {
+        this.weight = weight;
+        this.bias = bias;
+        RegisterComponents();
+    }
     public override Tensor forward(Tensor x)
     {
         return F.linear(x, weight, bias);
@@ -60,6 +69,13 @@ public class CustomEmbedding : nn.Module<Tensor, Tensor>
     {
         weight = new Parameter(torch.empty(num_embeddings, embedding_dim, dtype, device));
         // skips init
+        RegisterComponents();
+    }
+    public CustomEmbedding(
+        Parameter weight
+    ) : base("CustomEmbedding")
+    {
+        this.weight = weight;
         RegisterComponents();
     }
     public override Tensor forward(Tensor x)

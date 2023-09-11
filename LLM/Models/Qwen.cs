@@ -27,7 +27,7 @@ public class Qwen : GenerativeLM<LLaMAModel, LLaMAConfig, TikToken, TikTokenConf
 
 #nullable disable
     protected Qwen() { }
-#nullable enable
+#nullable restore
 
     public virtual Qwen to(torch.Device? device)
     {
