@@ -27,13 +27,18 @@ public static class LoRA
 
     public class LoRAModule : nn.Module
     {
-        public LoRAModule() : base("LoRAModule") { }
-#nullable disable
+        public LoRAModule(Parameter lora_a, Parameter lora_b, double dropout = 0, double scaling = 1) : base("LoRAModule")
+        {
+            this.lora_a = lora_a;
+            this.lora_b = lora_b;
+            this.dropout = dropout;
+            this.scaling = scaling;
+            RegisterComponents();
+        }
         public double dropout;
         public double scaling;
         public Parameter lora_a;
         public Parameter lora_b;
-#nullable restore
     }
 
     private class LoRAScope : IDisposable
@@ -94,27 +99,31 @@ public static class LoRA
                 var parent_name = string.Join('.', name.Split('.').SkipLast(1));
                 var field_name = name.Split('.').Last();
 
-                var parent = named_modules
-                    .Where(x => x.Item1 == parent_name).Select(x => x.Item2)
-                    .FirstOrDefault() ?? throw new Exception($"Unable to find parent module '{parent_name}'");
+                var parent = string.IsNullOrEmpty(parent_name)
+                    ? module
+                    : named_modules
+                        .Where(x => x.Item1 == parent_name).Select(x => x.Item2)
+                        .FirstOrDefault() ?? throw new Exception($"Unable to find parent module '{parent_name}'");
 
                 var field = parent.GetType().GetField(field_name)
                     ?? throw new Exception($"Unable to find field '{field_name}' in module '{parent_name}'");
 
-                if (module is CustomLinear linear)
+                if (child is CustomLinear linear)
                 {
                     var lora_linear = new LoRALinear(linear);
 
                     field.SetValue(parent, lora_linear);
+                    parent.register_module(field_name, null);
                     parent.register_module(field_name, lora_linear);
 
                     lora_linear.config_lora(config);
                 }
-                else if (module is CustomEmbedding embedding)
+                else if (child is CustomEmbedding embedding)
                 {
                     var lora_embedding = new LoRAEmbedding(embedding);
 
                     field.SetValue(parent, lora_embedding);
+                    parent.register_module(field_name, null);
                     parent.register_module(field_name, lora_embedding);
 
                     lora_embedding.config_lora(config);
@@ -127,7 +136,7 @@ public static class LoRA
         }
     }
 
-    public static (int, int) mark_trainable(nn.Module module)
+    public static (long, long) mark_trainable(nn.Module module)
     {
         using var no_grad = torch.no_grad();
 
@@ -140,8 +149,8 @@ public static class LoRA
         foreach (var pair in lora_state_dict)
             pair.Value.requires_grad_(true);
 
-        var total_params = (int)state_dict.Select(x => x.Value.numel()).Sum();
-        var lora_params = (int)lora_state_dict.Select(x => x.Value.numel()).Sum();
+        var total_params = state_dict.Select(x => x.Value.numel()).Sum();
+        var lora_params = lora_state_dict.Select(x => x.Value.numel()).Sum();
 
         return (total_params, lora_params);
     }
@@ -195,17 +204,16 @@ public class LoRALinear : CustomLinear, LoRA.ILoRALayer
             throw new Exception("hidden_size must be > 0");
 
         var (outputSize, inputSize) = weight.shape;
-        var lora = new LoRA.LoRAModule()
-        {
-            dropout = config.dropout,
-            scaling = config.alpha / config.hidden_size,
-            lora_a = nn.Parameter(torch.zeros(
+        var lora = new LoRA.LoRAModule(
+            lora_a: nn.Parameter(torch.zeros(
                 config.hidden_size, inputSize,
                 dtype: weight.dtype, device: weight.device)),
-            lora_b = nn.Parameter(torch.zeros(
+            lora_b: nn.Parameter(torch.zeros(
                 outputSize, config.hidden_size,
-                dtype: weight.dtype, device: weight.device))
-        };
+                dtype: weight.dtype, device: weight.device)),
+            dropout: config.dropout,
+            scaling: config.alpha / config.hidden_size
+        );
         nn.init.kaiming_uniform_(lora.lora_a, a: Math.Sqrt(5));
 
         lora_modules[name] = lora;
@@ -268,17 +276,16 @@ public class LoRAEmbedding : CustomEmbedding, LoRA.ILoRALayer
             throw new Exception("hidden_size must be > 0");
 
         var (num_embeddings, embedding_dim) = weight.shape;
-        var lora = new LoRA.LoRAModule()
-        {
-            dropout = config.dropout,
-            scaling = config.alpha / config.hidden_size,
-            lora_a = nn.Parameter(torch.zeros(
+        var lora = new LoRA.LoRAModule(
+            lora_a: nn.Parameter(torch.zeros(
                 config.hidden_size, num_embeddings,
                 dtype: weight.dtype, device: weight.device)),
-            lora_b = nn.Parameter(torch.zeros(
+            lora_b: nn.Parameter(torch.zeros(
                 embedding_dim, config.hidden_size,
-                dtype: weight.dtype, device: weight.device))
-        };
+                dtype: weight.dtype, device: weight.device)),
+            dropout: config.dropout,
+            scaling: config.alpha / config.hidden_size
+        );
         nn.init.normal_(lora.lora_b);
 
         lora_modules[name] = lora;

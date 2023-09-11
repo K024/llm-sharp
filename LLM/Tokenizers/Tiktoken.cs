@@ -128,7 +128,7 @@ public class TikToken
         ));
 
         encoder = config.ranks.ToDictionary(x =>
-            Encoding.UTF8.GetBytes(x.Key),
+            Convert.FromBase64String(x.Key),
             x => x.Value,
             new ByteArrayComparer());
         decoder = encoder.ReverseDictionary();

@@ -3,6 +3,7 @@ using llm_sharp.LLM.Models;
 using llm_sharp.LLM.Utils;
 using System.Threading.Channels;
 using TorchSharp.Modules;
+using System.Text.Json;
 
 namespace llm_sharp.LLM.Train;
 
@@ -57,7 +58,7 @@ public class QwenTrainer : Trainer
         return scope.MoveToOuter(loss);
     }
 
-    protected async Task loader(Channel<torch.Tensor[]> result)
+    public override async Task load_batches(ChannelWriter<torch.Tensor[]> result)
     {
         foreach (var batch in dataset.iterate_batch(config.batch_size, seed: -1))
         {
@@ -72,32 +73,22 @@ public class QwenTrainer : Trainer
             foreach (var mask in masks)
                 mask.AddRange(Enumerable.Repeat(0, max_length - mask.Count));
 
+            var scope = torch.NewDisposeScope();
+
             var input_ids = torch.tensor(
                 inputs.SelectMany(x => x).ToList(),
                 torch.int64, device
-            ).reshape(config.batch_size, max_length);
+            ).reshape(inputs.Count, max_length);
 
             var attention_mask = torch.tensor(
                 masks.SelectMany(x => x).ToList(),
                 torch.int64, device
-            ).reshape(config.batch_size, max_length);
+            ).reshape(masks.Count, max_length);
 
-            await result.Writer.WriteAsync(new[] { input_ids, attention_mask });
+            scope.Detach(input_ids, attention_mask);
+            await result.WriteAsync(new[] { input_ids, attention_mask });
         }
-        result.Writer.Complete();
-    }
-
-    public override IEnumerable<torch.Tensor[]> create_batches()
-    {
-        var result = Channel.CreateBounded<torch.Tensor[]>(5);
-        var loaderTask = Task.Run(() => loader(result));
-
-        while (result.Reader.WaitToReadAsync().Result)
-        {
-            var batch = result.Reader.ReadAsync().Result;
-            yield return batch;
-        }
-        loaderTask.Wait();
+        result.Complete();
     }
 
     public override void save_checkpoint(int step, bool finished)
@@ -115,17 +106,16 @@ public class QwenTrainer : Trainer
 public class QwenLoRATrainer : QwenTrainer
 {
     public const string LORA_SCOPE = "qwen-lora-trainer";
+    protected LoRA.LoRAConfig lora_config;
 
     public QwenLoRATrainer(TrainerConfig config) : base(config)
     {
-        var lora_config = new LoRA.LoRAConfig()
-        {
-            hidden_size = 8,
-        };
+        lora_config = new LoRA.LoRAConfig();
         var wrapped_modules = new List<string>()
         {
-            "",
-            "",
+            "word_embedding",
+            "layers.{layer}.attn.qkv_proj",
+            "lm_head",
         };
 
         using var lora = LoRA.lora_scope(LORA_SCOPE);
@@ -134,11 +124,29 @@ public class QwenLoRATrainer : QwenTrainer
         var (total, trained) = LoRA.mark_trainable(llm.model);
 
         Console.WriteLine($"Total params: {total}, trained params: {trained}");
-        Console.WriteLine($"Trainable percentage: {trained / (double)total}:P");
+        Console.WriteLine($"Trainable percentage: {trained / (double)total:P3}");
+    }
+
+    public override void save_checkpoint(int step, bool finished)
+    {
+        using var lora = LoRA.lora_scope(LORA_SCOPE);
+
+        var save_path = finished ? config.output_dir : Path.Combine(config.output_dir, $"checkpoint_{step}");
+        Directory.CreateDirectory(save_path);
+
+        var state_dict = LoRA.get_lora_state_dict(llm.model);
+        var save_name = Path.Combine(save_path, "lora_weights.safetensors");
+        Safetensors.save_tensors(state_dict, save_name);
+
+        File.WriteAllText(
+            Path.Join(save_path, "lora_config.json"),
+            JsonSerializer.Serialize(lora_config, Utils.LLM.TupleJsonSerializerOptions)
+        );
     }
 
     public override IEnumerable<Parameter> get_trainable_parameters()
     {
+        using var lora = LoRA.lora_scope(LORA_SCOPE);
         return LoRA.get_lora_state_dict(llm.model).Values.Select(x => torch.nn.Parameter(x));
     }
 

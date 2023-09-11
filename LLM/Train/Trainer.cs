@@ -1,5 +1,6 @@
 using System.Reflection;
 using System.Text.Json;
+using System.Threading.Channels;
 using TorchSharp;
 
 namespace llm_sharp.LLM.Train;
@@ -14,7 +15,6 @@ public record TrainerConfig
     public string trainer { get; set; } = "";
     public string model_path { get; set; } = "";
     public string data_path { get; set; } = "";
-    public string eval_data_path { get; set; } = "";
     public string output_dir { get; set; } = "";
 
     public bool use_bfloat16 { get; set; } = true;
@@ -32,7 +32,7 @@ public abstract class Trainer
 {
     public const string LOG_FILE = "train.log";
 
-    public static Trainer from_config(TrainerConfig config, Assembly assembly)
+    public static Trainer from_config(TrainerConfig config, Assembly? assembly = null)
     {
         var types = (assembly ?? typeof(Utils.LLM).Assembly).GetTypes();
 
@@ -99,7 +99,23 @@ public abstract class Trainer
         File.AppendAllText(Path.Combine(config.output_dir, LOG_FILE), log_str + "\n");
     }
 
-    public abstract IEnumerable<Tensor[]> create_batches();
+    public abstract Task load_batches(ChannelWriter<Tensor[]> writer);
+
+    public virtual IEnumerable<Tensor[]> create_batches()
+    {
+        var result = Channel.CreateBounded<Tensor[]>(5);
+        var loaderTask = Task.Factory.StartNew(() =>
+        {
+            return load_batches(result.Writer);
+        }, TaskCreationOptions.LongRunning);
+
+        while (result.Reader.WaitToReadAsync().AsTask().Result)
+        {
+            var batch = result.Reader.ReadAsync().Result;
+            yield return batch;
+        }
+        loaderTask.Wait();
+    }
 
     public abstract Tensor compute_loss(params Tensor[] inputs);
 
@@ -120,7 +136,10 @@ public abstract class Trainer
             var acc_step = 0;
             foreach (var batch in create_batches())
             {
-                using var loss = compute_loss(batch);
+                var scope = torch.NewDisposeScope();
+                batch.ToList().ForEach(tensor => scope.Include(tensor));
+
+                var loss = compute_loss(batch);
                 acc_loss += loss.item<double>();
                 acc_step += 1;
 

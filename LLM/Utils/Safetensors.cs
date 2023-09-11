@@ -203,10 +203,10 @@ public class Safetensors : IDisposable
         var tensorList = tensors.ToList();
         tensorList.Sort((a, b) => a.Key.CompareTo(b.Key));
 
-        var offset = 0;
+        var offset = 0L;
         foreach (var pair in tensorList)
         {
-            var size = pair.Value.bytes.Length;
+            var size = pair.Value.numel() * pair.Value.element_size();
             var begin = offset;
             var end = begin + size;
             var info = new TensorInfo()
@@ -238,6 +238,13 @@ public class Safetensors : IDisposable
         writer.Write(header.ToArray());
 
         foreach (var pair in tensorList)
-            writer.Write(pair.Value.bytes);
+        {
+            using var scope = torch.NewDisposeScope();
+            var tensor = pair.Value;
+            if (!tensor.is_cpu())
+                tensor = tensor.cpu();
+
+            writer.Write(tensor.bytes);
+        }
     }
 }

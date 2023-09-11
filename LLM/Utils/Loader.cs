@@ -203,10 +203,10 @@ public abstract partial class LLM<TModel, TModelConfig, TTokenizer, TTokenizerCo
         var weight_shard = new Dictionary<string, int>();
 
         var current_shard = 0;
-        var current_size = 0;
+        var current_size = 0L;
         foreach (var pair in state_dict)
         {
-            var size = pair.Value.bytes.Length;
+            var size = pair.Value.numel() * pair.Value.element_size();
             if (size > max_size)
                 throw new Exception($"Unable to save tensor {pair.Key} with shard size limit {max_size}");
 
