@@ -1,0 +1,3 @@
+[submodule "NativeOps/third-party/AutoAWQ"]
+	path = NativeOps/third-party/AutoAWQ
+	url = https://github.com/casper-hansen/AutoAWQ

@@ -17,6 +17,7 @@
 
   <ItemGroup>
     <ProjectReference Include="..\LLM\LLM.csproj" />
+    <ProjectReference Include="..\NativeOps\NativeOps.csproj" />
   </ItemGroup>
 
 </Project>

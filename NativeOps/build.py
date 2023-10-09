@@ -3,27 +3,55 @@ from pathlib import Path
 import torch.utils.cpp_extension as torch_ext
 
 
+build_name = "llm_sharp_ops"
+root = Path(__file__).parent
+
+build_path = root / "build"
+build_path.mkdir(parents=True, exist_ok=True)
+
+auto_awq = root / "third-party/AutoAWQ/awq_cuda"
+
+sources = [
+    root / "src/nativeops.cpp", 
+    auto_awq / "quantization/gemm_cuda_gen.cu",
+    auto_awq / "quantization/gemv_cuda.cu",
+    auto_awq / "layernorm/layernorm.cu",
+    auto_awq / "position_embedding/pos_encoding_kernels.cu",
+    # auto_awq / "attention/ft_attention.cpp",
+    # auto_awq / "attention/decoder_masked_multihead_attention.cu"
+]
+
+extra_cflags = []
+
+extra_cuda_cflags = []
+
+
 if "include" in sys.argv:
     print(json.dumps(torch_ext.include_paths(cuda=True), indent=2))
     print(json.dumps(torch_ext.library_paths(cuda=True), indent=2))
     exit(0)
 
-build_name = "llm_sharp_ops"
-root = Path(__file__).parent
-src = root / "src"
-
-
-build_path = root / "build"
-build_path.mkdir(parents=True, exist_ok=True)
-
-
-sources = [str(x) for x in src.glob("*.cpp")] + [str(x) for x in src.glob("*.cu")]
-include_paths = [str(src)]
-
 
 if "clean" in sys.argv:
     shutil.rmtree(build_path)
     exit(0)
+
+
+def get_compute_capabilities():
+    import torch
+
+    for i in range(torch.cuda.device_count()):
+        major, minor = torch.cuda.get_device_capability(i)
+        cc = major * 10 + minor
+        if cc < 75:
+            raise RuntimeError("GPUs with compute capability less than 7.5 are not supported.")
+
+    compute_capabilities = {75, 80, 86, 89, 90}
+    capability_flags = []
+    for cap in compute_capabilities:
+        capability_flags += ["-gencode", f"arch=compute_{cap},code=sm_{cap}"]
+
+    return capability_flags
 
 
 if torch_ext.IS_WINDOWS:
@@ -45,14 +73,47 @@ if torch_ext.IS_WINDOWS:
     append_env("include", vc_env.get("include", ""))
     append_env("lib", vc_env.get("lib", ""))
 
+    extra_cflags += [
+        "/Ox", "/std:c++17"
+    ]
+    extra_cuda_cflags += [
+        "-O3", 
+        "-std=c++17",
+        "-DENABLE_BF16",
+        "--use_fast_math",
+    ]
+    extra_cuda_cflags += get_compute_capabilities()
+
+else:
+    extra_cflags += [
+        "-g", "-O3", "-fopenmp", "-lgomp", "-std=c++17", "-DENABLE_BF16"
+    ]
+    extra_cuda_cflags += [
+        "-O3", 
+        "-std=c++17",
+        "-DENABLE_BF16",
+        "-U__CUDA_NO_HALF_OPERATORS__",
+        "-U__CUDA_NO_HALF_CONVERSIONS__",
+        "-U__CUDA_NO_BFLOAT16_OPERATORS__",
+        "-U__CUDA_NO_BFLOAT16_CONVERSIONS__",
+        "-U__CUDA_NO_BFLOAT162_OPERATORS__",
+        "-U__CUDA_NO_BFLOAT162_CONVERSIONS__",
+        "--expt-relaxed-constexpr",
+        "--expt-extended-lambda",
+        "--use_fast_math",
+    ]
+    extra_cuda_cflags += get_compute_capabilities()
+
 
 torch_ext.load(
     build_name,
-    sources=sources,
-    extra_include_paths=include_paths,
+    sources=[str(s) for s in sources],
     build_directory=str(build_path),
+    extra_cflags=extra_cflags,
+    extra_cuda_cflags=extra_cuda_cflags,
     with_cuda=True,
     is_python_module=False,
+    verbose=True
 )
 
 
@@ -72,3 +133,6 @@ elif torch_ext.IS_LINUX:
 
 else:
     raise Exception("Unsupported system")
+
+print("Build success")
+print("Copied output file to", runtimes_target)
