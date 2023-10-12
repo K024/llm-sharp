@@ -1,3 +1,6 @@
 [submodule "NativeOps/third-party/AutoAWQ"]
 	path = NativeOps/third-party/AutoAWQ
 	url = https://github.com/casper-hansen/AutoAWQ
+[submodule "NativeOps/third-party/AutoGPTQ"]
+	path = NativeOps/third-party/AutoGPTQ
+	url = https://github.com/PanQiWei/AutoGPTQ

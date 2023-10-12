@@ -9,16 +9,28 @@ root = Path(__file__).parent
 build_path = root / "build"
 build_path.mkdir(parents=True, exist_ok=True)
 
+auto_gptq = root / "third-party/AutoGPTQ/autogptq_cuda"
 auto_awq = root / "third-party/AutoAWQ/awq_cuda"
 
 sources = [
     root / "src/nativeops.cpp", 
+
+    root / "src/autoawq_ops.cpp",
     auto_awq / "quantization/gemm_cuda_gen.cu",
     auto_awq / "quantization/gemv_cuda.cu",
     auto_awq / "layernorm/layernorm.cu",
     auto_awq / "position_embedding/pos_encoding_kernels.cu",
     # auto_awq / "attention/ft_attention.cpp",
-    # auto_awq / "attention/decoder_masked_multihead_attention.cu"
+    # auto_awq / "attention/decoder_masked_multihead_attention.cu",
+
+    # root / "src/autogptq_ops.cpp",
+    # auto_gptq / "autogptq_cuda_64.cpp",
+    # auto_gptq / "autogptq_cuda_kernel_64.cu",
+
+    root / "src/exllama_ops.cpp",
+    auto_gptq / "exllama/cuda_func/q4_matrix.cu",
+    # auto_gptq / "exllama/cuda_func/q4_matmul.cu",
+    root / "src/exllama_q4_matmul.cu",
 ]
 
 extra_cflags = []
