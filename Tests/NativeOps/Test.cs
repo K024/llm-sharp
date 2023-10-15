@@ -28,21 +28,27 @@ public class NativeOpsTests
     [TestMethod]
     public void ExtraOps_ShouldHaveSimilarResults()
     {
-        Tensor pack_u4(Tensor x)
+        Tensor pack_u4(Tensor x, int[]? order = null)
         {
             var (dim1, dim2) = x.shape;
             var packed = torch.zeros(new[] { dim1, (dim2 + 7) / 8 }, dtype: torch.int32, device: x.device);
             for (int n = 0; n < 8; n++)
-                packed[TensorIndex.Colon] |= (x[TensorIndex.Colon, TensorIndex.Slice(n, null, 8)] & 0xF).bitwise_left_shift(n * 4);
+            {
+                var i = order?[n] ?? n;
+                packed[TensorIndex.Colon] |= (x[TensorIndex.Colon, TensorIndex.Slice(i, null, 8)] & 0xF).bitwise_left_shift(n * 4);
+            }
             return packed;
         }
 
-        Tensor unpack_u4(Tensor x)
+        Tensor unpack_u4(Tensor x, int[]? order = null)
         {
             var (dim1, dim2) = x.shape;
             var unpacked = torch.zeros(new[] { dim1, dim2 * 8 }, dtype: torch.int32, device: x.device);
             for (int n = 0; n < 8; n++)
-                unpacked[TensorIndex.Colon, TensorIndex.Slice(n, null, 8)] = x.bitwise_right_shift(n * 4) & 0xF;
+            {
+                var i = order?[n] ?? n;
+                unpacked[TensorIndex.Colon, TensorIndex.Slice(i, null, 8)] = x.bitwise_right_shift(n * 4) & 0xF;
+            }
             return unpacked;
         }
 
@@ -103,5 +109,15 @@ public class NativeOpsTests
 
         Assert.IsTrue((reference - output2).abs().max().to(torch.float32).item<float>() < 0.05);
         Assert.IsTrue((reference - output2).abs().mean().to(torch.float32).item<float>() < 0.005);
+
+        var output3 = ops.awq_gemm_forward(
+            x,
+            pack_u4(qa.T, order: new[] { 0, 2, 4, 6, 1, 3, 5, 7 }),
+            scales.T.contiguous(),
+            pack_u4(qzeros.T, order: new[] { 0, 2, 4, 6, 1, 3, 5, 7 })
+        );
+
+        Assert.IsTrue((reference - output3).abs().max().to(torch.float32).item<float>() < 0.05);
+        Assert.IsTrue((reference - output3).abs().mean().to(torch.float32).item<float>() < 0.005);
     }
 }

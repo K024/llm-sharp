@@ -1,6 +1,7 @@
 using TorchSharp;
 using TorchSharp.Modules;
 using llm_sharp.LLM.Utils;
+using llm_sharp.LLM.Layers;
 
 namespace llm_sharp.LLM.Models;
 
@@ -9,200 +10,109 @@ using Tensor = torch.Tensor;
 using TensorIndex = torch.TensorIndex;
 using F = torch.nn.functional;
 
-public record LLaMAConfig
+/// input => output
+using IModule = torch.nn.Module<torch.Tensor, torch.Tensor>;
+
+/// input, rotary_embedding, attention_mask, (k_cache, v_cache) => output, (k_cache, v_cache)
+using ILlamaAttention = torch.nn.Module<
+    torch.Tensor, // x
+    (torch.Tensor cos, torch.Tensor sin),
+    torch.Tensor?, // attention mask
+    (torch.Tensor k_cache, torch.Tensor v_cache)?,
+    (torch.Tensor h, (torch.Tensor k_cache, torch.Tensor v_cache) kv_cache)
+>;
+using ILlamaBlock = torch.nn.Module<
+    torch.Tensor, // x
+    (torch.Tensor cos, torch.Tensor sin),
+    torch.Tensor?, // attention mask
+    (torch.Tensor k_cache, torch.Tensor v_cache)?,
+    (torch.Tensor h, (torch.Tensor k_cache, torch.Tensor v_cache) kv_cache)
+>;
+
+/// position_ids => (cos, sin)
+using IRotaryEmbedding = torch.nn.Module<torch.Tensor, (torch.Tensor cos, torch.Tensor sin)>;
+
+public record LlamaConfig
 {
     public virtual long hidden_size { get; set; } = 4096;
     public virtual long inner_hidden_size { get; set; } = 11008;
     public virtual long head_hidden_size { get; set; } = 128;
+    public virtual string hidden_act { get; set; } = "silu";
 
     public virtual long num_attention_heads { get; set; } = 32;
+    public virtual long num_key_value_heads { get; set; } = 32;
     public virtual int num_layers { get; set; } = 32;
 
-    public virtual long vocab_size { get; set; } = 151936;
+    public virtual bool qkv_bias { get; set; } = false;
+    public virtual bool o_bias { get; set; } = false;
+
+    public virtual long vocab_size { get; set; } = 32000;
     public virtual double dropout_rate { get; set; } = 0.0;
-    public virtual double layernorm_epsilon { get; set; } = 1e-05;
+    public virtual double layernorm_epsilon { get; set; } = 1e-06;
     public virtual long max_sequence_length { get; set; } = 2048;
 }
 
-public class CustomLinear : nn.Module<Tensor, Tensor>
+public class LlamaBuilder : AbstractBuilder
 {
-    public Parameter weight;
-    public Parameter? bias;
-    public CustomLinear(
-        long inputSize,
-        long outputSize,
-        bool hasBias = true,
-        torch.ScalarType? dtype = null,
-        torch.Device? device = null
-    ) : base("CustomLinear")
+    public LlamaBuilder(LlamaConfig config)
     {
-        weight = new Parameter(torch.empty(outputSize, inputSize, dtype, device));
-        if (hasBias)
-            bias = new Parameter(torch.empty(outputSize, dtype, device));
-        // skips init
-        RegisterComponents();
+        this.config = config;
     }
-    public CustomLinear(
-        Parameter weight,
-        Parameter? bias = null
-    ) : base("CustomLinear")
-    {
-        this.weight = weight;
-        this.bias = bias;
-        RegisterComponents();
-    }
-    public override Tensor forward(Tensor x)
-    {
-        return F.linear(x, weight, bias);
-    }
+
+    public virtual new LlamaConfig config { get => (LlamaConfig)base.config; set => base.config = value; }
+
+    public virtual IModule create_ln(params long[] shape)
+        => new RMSNorm(shape, config.layernorm_epsilon, dtype: dtype, device: device);
+
+    public virtual IModule create_dropout() => nn.Dropout(config.dropout_rate);
+
+    public virtual ILlamaAttention create_llama_attention() => new LlamaAttention(this);
+
+    public virtual IModule create_llama_ffn()
+        => new GatedFeedForward(this, config.hidden_size, config.inner_hidden_size, config.dropout_rate, bias: false, act_fn_name: config.hidden_act);
+
+    public virtual ILlamaBlock create_llama_block() => new LlamaBlock(this);
+
+    public virtual IRotaryEmbedding create_rotary_embedding()
+        => new RotaryEmbedding(config.max_sequence_length, config.head_hidden_size, dtype: dtype, device: device);
 }
 
-public class CustomEmbedding : nn.Module<Tensor, Tensor>
-{
-    public Parameter weight;
-    public CustomEmbedding(
-        long num_embeddings,
-        long embedding_dim,
-        torch.ScalarType? dtype = null,
-        torch.Device? device = null
-    ) : base("CustomEmbedding")
-    {
-        weight = new Parameter(torch.empty(num_embeddings, embedding_dim, dtype, device));
-        // skips init
-        RegisterComponents();
-    }
-    public CustomEmbedding(
-        Parameter weight
-    ) : base("CustomEmbedding")
-    {
-        this.weight = weight;
-        RegisterComponents();
-    }
-    public override Tensor forward(Tensor x)
-    {
-        return weight[x];
-    }
-}
-
-public class RotaryEmbedding : nn.Module<Tensor, (Tensor cos, Tensor sin)>
-{
-    public static (Tensor cos, Tensor sin) precompute_freqs_cis(long dim, long length, double theta = 10000.0)
-    {
-        using var scope = torch.NewDisposeScope();
-        if (dim % 2 != 0)
-            throw new Exception("dim should be multiple of 2");
-        var freqs = 1.0 / torch.pow(theta, torch.arange(0, dim, 2).to(torch.float32) / dim);
-        freqs = torch.outer(torch.arange(length).to(torch.float32), freqs);
-        freqs = torch.cat(new[] { freqs, freqs }, dim: -1);
-        return scope.MoveToOuter(torch.cos(freqs), torch.sin(freqs));
-    }
-
-    public static Tensor apply_rotary_emb(Tensor x, (Tensor cos, Tensor sin) freqs_cis)
-    {
-        using var scope = torch.NewDisposeScope();
-        var half_dim = x.shape.Last() / 2;
-        var splitSizes = Enumerable.Repeat(half_dim, 2).ToArray();
-        var (x_r, x_i) = torch.split(x, splitSizes, dim: -1);
-        var rotated = torch.cat(new[] { -x_i, x_r }, dim: -1);
-        return scope.MoveToOuter(x * freqs_cis.cos + rotated * freqs_cis.sin);
-    }
-
-    public Tensor cos;
-    public Tensor sin;
-
-    public RotaryEmbedding(
-        long num_embeddings,
-        long embedding_dims,
-        torch.ScalarType? dtype = null,
-        torch.Device? device = null
-    ) : base("RotaryEmbedding")
-    {
-        (cos, sin) = precompute_freqs_cis(embedding_dims, num_embeddings);
-        if (dtype is not null)
-            (cos, sin) = (cos.to(dtype.Value), sin.to(dtype.Value));
-        if (device is not null)
-            (cos, sin) = (cos.to(device), sin.to(device));
-
-        RegisterComponents();
-    }
-
-    public override (Tensor cos, Tensor sin) forward(Tensor x)
-    {
-        using var scope = torch.NewDisposeScope();
-        var (n_batch, n_seq) = x.shape;
-        return scope.MoveToOuter(
-            cos[x].view(n_batch, n_seq, 1, -1),
-            sin[x].view(n_batch, n_seq, 1, -1)
-        );
-    }
-
-    public override Dictionary<string, Tensor> state_dict(Dictionary<string, Tensor>? destination = null, string? prefix = null)
-    {
-        // omit from state_dict
-        return destination ?? new();
-    }
-}
-
-public class RMSNorm : nn.Module<Tensor, Tensor>
-{
-    public Parameter weight;
-    public double eps;
-
-    public RMSNorm(
-        long[] normalized_shape,
-        double eps = 1e-5,
-        torch.ScalarType? dtype = null,
-        torch.Device? device = null
-    ) : base("RMSNorm")
-    {
-        weight = nn.Parameter(torch.ones(normalized_shape, dtype: dtype, device: device));
-        this.eps = eps;
-
-        RegisterComponents();
-    }
-
-    public override Tensor forward(Tensor x)
-    {
-        using var scope = torch.NewDisposeScope();
-        var h = x.to(torch.float32);
-        var norm = h * torch.rsqrt(h.pow(2).mean(new[] { -1L }, keepdim: true) + (float)eps);
-        return scope.MoveToOuter(norm.type_as(x) * weight);
-    }
-}
-
-public class LLaMAAttention : nn.Module<
-    Tensor, // x
-    (Tensor cos, Tensor sin),
-    Tensor?, // attention mask
-    (Tensor k_cache, Tensor v_cache)?,
-    (Tensor h, (Tensor k_cache, Tensor v_cache) kv_cache)>
+public class LlamaAttention : ILlamaAttention
 {
     public long n_head;
+    public long n_kv_head;
     public long d_head;
-    public CustomLinear qkv_proj;
-    public CustomLinear o_proj;
+    public int n_groups;
+    public IModule qkv_proj;
+    public IModule o_proj;
     public Dropout dropout;
 
-    public LLaMAAttention(
-        long n_state,
-        long n_head,
-        long d_head,
-        double dropout_rate = 0.0,
-        bool qkv_bias = true,
-        bool o_bias = false,
-        torch.ScalarType? dtype = null,
-        torch.Device? device = null
-    ) : base("LLaMAAttention")
+    public LlamaAttention(LlamaBuilder builder) : base("LlamaAttention")
     {
-        this.n_head = n_head;
-        this.d_head = d_head;
-        if (this.d_head % (4 * n_head) != 0)
+        var config = builder.config;
+        n_head = config.num_attention_heads;
+        n_kv_head = config.num_key_value_heads;
+        d_head = config.head_hidden_size;
+
+        if (d_head % (4 * n_head) != 0)
             throw new Exception("d_head should be multiple of n_head");
-        qkv_proj = new CustomLinear(n_state, d_head * n_head * 3, hasBias: qkv_bias, dtype: dtype, device: device);
-        o_proj = new CustomLinear(d_head * n_head, n_state, hasBias: o_bias, dtype: dtype, device: device);
-        dropout = nn.Dropout(dropout_rate);
+        if (n_head % n_kv_head != 0)
+            throw new Exception("n_head should be multiple of n_kv_head");
+        n_groups = (int)(n_head / n_kv_head);
+
+        qkv_proj = builder.create_linear(config.hidden_size, d_head * (n_head + 2 * n_kv_head), hasBias: config.qkv_bias);
+        o_proj = builder.create_linear(d_head * n_head, config.hidden_size, hasBias: config.o_bias);
+        dropout = nn.Dropout(config.dropout_rate);
 
         RegisterComponents();
+    }
+
+    public static Tensor repeat_kv(Tensor x, int n)
+    {
+        using var scope = torch.NewDisposeScope();
+        var (bs, n_heads, n_seq, d_head) = x.shape;
+        x = x.unsqueeze(2).expand(bs, n_heads, n, n_seq, d_head);
+        return scope.MoveToOuter(x.reshape(bs, n_heads * n, n_seq, d_head));
     }
 
     public override (Tensor h, (Tensor k_cache, Tensor v_cache) kv_cache) forward(
@@ -215,12 +125,12 @@ public class LLaMAAttention : nn.Module<
 
         var (n_batch, n_seq, _) = x.shape;
 
-        var splitSizes = Enumerable.Repeat(d_head * n_head, 3).ToArray();
+        var splitSizes = new[] { d_head * n_head, d_head * n_kv_head, d_head * n_kv_head };
         var (q, k, v) = torch.split(qkv_proj.call(x), splitSizes, dim: -1);
 
         q = q.view(n_batch, n_seq, n_head, d_head);
-        k = k.view(n_batch, n_seq, n_head, d_head);
-        v = v.view(n_batch, n_seq, n_head, d_head);
+        k = k.view(n_batch, n_seq, n_kv_head, d_head);
+        v = v.view(n_batch, n_seq, n_kv_head, d_head);
 
         q = RotaryEmbedding.apply_rotary_emb(q, freqs_cis);
         k = RotaryEmbedding.apply_rotary_emb(k, freqs_cis);
@@ -236,6 +146,12 @@ public class LLaMAAttention : nn.Module<
         q = q.permute(0, 2, 1, 3);
         k = k.permute(0, 2, 3, 1);
         v = v.permute(0, 2, 1, 3);
+
+        if (n_groups > 1)
+        {
+            k = repeat_kv(k, n_groups);
+            v = repeat_kv(v, n_groups);
+        }
 
         // (n_batch, n_head, n_seq, n_seq_past)
         var qk = torch.matmul(q, k) / Math.Sqrt(d_head);
@@ -260,76 +176,19 @@ public class LLaMAAttention : nn.Module<
     }
 }
 
-public class GatedFeedForward : nn.Module<Tensor, Tensor>
+public class LlamaBlock : ILlamaBlock
 {
-    public long hidden_dim;
-    public CustomLinear w_in;
-    public CustomLinear w_gate;
-    public CustomLinear w_out;
-    public Dropout dropout;
-    public Func<Tensor, Tensor> act_fn;
+    public IModule attn_ln;
+    public ILlamaAttention attn;
+    public IModule ffn_ln;
+    public IModule ffn;
 
-    public GatedFeedForward(
-        long dim,
-        long? hidden_dim = null,
-        double dropout_rate = 0.0,
-        bool bias = false,
-        torch.ScalarType? dtype = null,
-        torch.Device? device = null,
-        Func<Tensor, Tensor>? act_fn = null
-    ) : base("GatedFeedForward")
+    public LlamaBlock(LlamaBuilder builder) : base("LlamaBlock")
     {
-        this.hidden_dim = hidden_dim ?? dim * 4;
-        w_in = new CustomLinear(dim, this.hidden_dim, hasBias: bias, dtype: dtype, device: device);
-        w_gate = new CustomLinear(dim, this.hidden_dim, hasBias: bias, dtype: dtype, device: device);
-        w_out = new CustomLinear(this.hidden_dim, dim, hasBias: bias, dtype: dtype, device: device);
-        dropout = nn.Dropout(dropout_rate);
-        this.act_fn = act_fn ?? F.SiLU;
-
-        RegisterComponents();
-    }
-
-    public override Tensor forward(Tensor x)
-    {
-        using var scope = torch.NewDisposeScope();
-        var h = act_fn(w_gate.call(x)) * w_in.call(x);
-        return scope.MoveToOuter(w_out.call(dropout.call(h)));
-    }
-}
-
-public class LLaMABlock : nn.Module<
-    Tensor, // x
-    (Tensor cos, Tensor sin),
-    Tensor?, // attention mask
-    (Tensor k_cache, Tensor v_cache)?,
-    (Tensor h, (Tensor k_cache, Tensor v_cache) kv_cache)>
-{
-    public RMSNorm attn_ln;
-    public LLaMAAttention attn;
-    public RMSNorm ffn_ln;
-    public GatedFeedForward ffn;
-
-    public LLaMABlock(LLaMAConfig config, torch.ScalarType? dtype, torch.Device? device = null) : base("LLaMABlock")
-    {
-        attn_ln = new RMSNorm(
-            new[] { config.hidden_size },
-            eps: config.layernorm_epsilon,
-            dtype: dtype, device: device);
-        attn = new LLaMAAttention(
-            config.hidden_size,
-            config.num_attention_heads,
-            config.head_hidden_size,
-            dropout_rate: config.dropout_rate,
-            dtype: dtype, device: device);
-        ffn_ln = new RMSNorm(
-            new[] { config.hidden_size },
-            eps: config.layernorm_epsilon,
-            dtype: dtype, device: device);
-        ffn = new GatedFeedForward(
-            config.hidden_size,
-            config.inner_hidden_size,
-            config.dropout_rate,
-            dtype: dtype, device: device);
+        attn_ln = builder.create_ln();
+        attn = builder.create_llama_attention();
+        ffn_ln = builder.create_ln();
+        ffn = builder.create_llama_ffn();
 
         RegisterComponents();
     }
@@ -360,7 +219,7 @@ public class LLaMABlock : nn.Module<
     }
 }
 
-public record LLaMAModelInput : BatchEncoding
+public record LlamaModelInput : IBatchEncoding
 {
     public Tensor? input_ids { get; set; }
     public Tensor? input_embeddings { get; set; }
@@ -370,41 +229,34 @@ public record LLaMAModelInput : BatchEncoding
     public List<(Tensor k_cache, Tensor v_cache)>? past_key_values { get; set; }
 }
 
-public record LLaMAModelOutput : BatchEncoding
+public record LlamaModelOutput : IBatchEncoding
 {
     public Tensor? loss { get; set; }
     public Tensor logits { get; set; } = null!;
     public List<(Tensor k_cache, Tensor v_cache)> current_key_values { get; set; } = null!;
 }
 
-public class LLaMAModel : nn.Module<LLaMAModelInput, LLaMAModelOutput>
+public class LlamaModel : nn.Module<LlamaModelInput, LlamaModelOutput>
 {
-    public LLaMAConfig config;
-    public CustomEmbedding word_embedding;
-    public Dropout dropout;
-    public ModuleList<LLaMABlock> layers;
-    public RMSNorm final_ln;
-    public CustomLinear lm_head;
-    public RotaryEmbedding rotary;
+    public LlamaConfig config;
+    public IModule word_embedding;
+    public IModule dropout;
+    public ModuleList<ILlamaBlock> layers;
+    public IModule final_ln;
+    public IModule lm_head;
+    public IRotaryEmbedding rotary;
 
-    public (Tensor cos, Tensor sin) freqs_cis;
-
-    public LLaMAModel(LLaMAConfig config, torch.ScalarType? dtype = null, torch.Device? device = null) : base("LLaMAModel")
+    public LlamaModel(LlamaBuilder builder) : base("LlamaModel")
     {
-        this.config = config;
-        word_embedding = new CustomEmbedding(
-            config.vocab_size, config.hidden_size, dtype: dtype, device: device
-        );
-        dropout = nn.Dropout(config.dropout_rate);
+        config = builder.config;
+        word_embedding = builder.create_embedding(config.vocab_size, config.hidden_size);
+        dropout = builder.create_dropout();
         layers = nn.ModuleList(
             Enumerable.Range(0, config.num_layers)
-                .Select(index => new LLaMABlock(config, dtype: dtype, device: device)).ToArray());
-        final_ln = new RMSNorm(
-            new[] { config.hidden_size }, eps: config.layernorm_epsilon, dtype: dtype, device: device);
-        lm_head = new CustomLinear(
-            config.hidden_size, config.vocab_size, hasBias: false, dtype: dtype, device: device);
-        rotary = new RotaryEmbedding(
-            config.max_sequence_length, config.head_hidden_size, dtype: dtype, device: device);
+                .Select(index => builder.create_llama_block()).ToArray());
+        final_ln = builder.create_ln(config.hidden_size);
+        lm_head = builder.create_linear(config.hidden_size, config.vocab_size, hasBias: false);
+        rotary = builder.create_rotary_embedding();
 
         RegisterComponents();
     }
@@ -413,7 +265,7 @@ public class LLaMAModel : nn.Module<LLaMAModelInput, LLaMAModelOutput>
         Tensor input_embeddings,
         Tensor attention_mask,
         (Tensor cos, Tensor sin) freqs_cis
-    ) prepare_input(LLaMAModelInput input)
+    ) prepare_input(LlamaModelInput input)
     {
         using var scope = torch.NewDisposeScope();
 
@@ -478,7 +330,7 @@ public class LLaMAModel : nn.Module<LLaMAModelInput, LLaMAModelOutput>
         );
     }
 
-    public override LLaMAModelOutput forward(LLaMAModelInput input)
+    public override LlamaModelOutput forward(LlamaModelInput input)
     {
         using var outer_scope = torch.NewDisposeScope();
 

@@ -2,6 +2,8 @@ using TorchSharp;
 
 namespace llm_sharp.LLM.Utils;
 
+using LLM = Pretrained.LLM;
+
 public static class CliExtensions
 {
     public static void run_torch_test()

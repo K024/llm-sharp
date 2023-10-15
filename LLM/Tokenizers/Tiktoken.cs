@@ -21,7 +21,7 @@ public record TikTokenConfig
     public string pattern { get; set; } = "'s|'t|'re|'ve|'m|'ll|'d| ?\\p{L}+| ?\\p{N}+| ?[^\\s\\p{L}\\p{N}]+|\\s+(?!\\S)|\\s+";
 }
 
-public class TikToken
+public class TikToken : ITokenizer
 {
     // modified from https://github.com/openai/tiktoken/blob/main/src/lib.rs
 

@@ -2,7 +2,7 @@ using TorchSharp;
 
 namespace llm_sharp.LLM.Utils;
 
-public abstract record BatchEncoding
+public interface IBatchEncoding
 {
     public void to(torch.Device device)
     {

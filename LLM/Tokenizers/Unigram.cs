@@ -16,7 +16,7 @@ public record UnigramConfig
     public string? precompiled_charsmap { get; set; }
 }
 
-public class Unigram
+public class Unigram : ITokenizer
 {
     public static List<string> unigram_viterbi(
         string sequence,

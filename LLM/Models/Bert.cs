@@ -2,7 +2,9 @@ using TorchSharp;
 using TorchSharp.Modules;
 using llm_sharp.LLM.Utils;
 using llm_sharp.LLM.Tokenizers;
+using llm_sharp.LLM.Pretrained;
 using System.Text.Json;
+using llm_sharp.LLM.Layers;
 
 namespace llm_sharp.LLM.Models;
 
@@ -10,6 +12,17 @@ using nn = torch.nn;
 using Tensor = torch.Tensor;
 using TensorIndex = torch.TensorIndex;
 using F = torch.nn.functional;
+
+/// input => output
+using IModule = torch.nn.Module<torch.Tensor, torch.Tensor>;
+
+/// input_ids, input_embeddings, token_type_ids, position_ids => output
+using IBertEmbeddings = torch.nn.Module<torch.Tensor?, torch.Tensor?, torch.Tensor?, torch.Tensor?, torch.Tensor>;
+
+/// input, attention_mask => output
+using IBertAttention = torch.nn.Module<torch.Tensor, torch.Tensor?, torch.Tensor>;
+using IBertPooler = torch.nn.Module<torch.Tensor, torch.Tensor?, torch.Tensor>;
+using IBertBlock = torch.nn.Module<torch.Tensor, torch.Tensor?, torch.Tensor>;
 
 public record BertConfig
 {
@@ -31,34 +44,53 @@ public record BertConfig
     public virtual string classifier_mode { get; set; } = BertModel.SEQUENCE;
 }
 
-public class BertEmbeddings : nn.Module<Tensor?, Tensor?, Tensor?, Tensor?, Tensor>
+public class BertBuilder : AbstractBuilder
 {
-    public CustomEmbedding word_embeddings;
-    public CustomEmbedding position_embeddings;
-    public CustomEmbedding token_type_embeddings;
-    public LayerNorm layer_norm;
-    public Dropout dropout;
-
-    public BertEmbeddings(
-        long vocab_size,
-        long hidden_size,
-        long max_position_embeddings,
-        long type_vocab_size,
-        double layer_norm_eps = 1e-5,
-        double dropout_rate = 0.0,
-        torch.ScalarType? dtype = null,
-        torch.Device? device = null
-    ) : base("BertEmbeddings")
+    public BertBuilder(BertConfig config)
     {
-        word_embeddings = new CustomEmbedding(vocab_size, hidden_size, dtype: dtype, device: device);
-        position_embeddings = new CustomEmbedding(max_position_embeddings, hidden_size, dtype: dtype, device: device);
-        token_type_embeddings = new CustomEmbedding(type_vocab_size, hidden_size, dtype: dtype, device: device);
+        this.config = config;
+    }
 
-        layer_norm = nn.LayerNorm(hidden_size, layer_norm_eps, dtype: dtype, device: device);
-        dropout = nn.Dropout(dropout_rate);
+    public virtual new BertConfig config { get => (BertConfig)base.config; set => base.config = value; }
+
+    public virtual IModule create_ln(params long[] shape)
+        => nn.LayerNorm(shape, config.layernorm_epsilon, dtype: dtype, device: device);
+
+    public virtual IModule create_dropout() => nn.Dropout(config.dropout_rate);
+
+    public virtual IBertEmbeddings create_bert_embeddings() => new BertEmbeddings(this);
+
+    public virtual IBertAttention create_bert_attention() => new BertAttention(this);
+
+    public virtual IModule create_bert_ffn()
+        => new FeedForward(this, config.hidden_size, config.inner_hidden_size, config.dropout_rate, bias: true, act_fn_name: "gelu");
+
+    public virtual IBertPooler create_bert_pooler() => new BertPooler(this);
+
+    public virtual IBertBlock create_bert_block() => new BertBlock(this);
+}
+
+public class BertEmbeddings : IBertEmbeddings
+{
+    public IModule word_embeddings;
+    public IModule position_embeddings;
+    public IModule token_type_embeddings;
+    public IModule layer_norm;
+    public IModule dropout;
+
+    public BertEmbeddings(BertBuilder builder) : base("BertEmbeddings")
+    {
+        var config = builder.config;
+        word_embeddings = builder.create_embedding(config.vocab_size, config.hidden_size);
+        position_embeddings = builder.create_embedding(config.max_sequence_length, config.hidden_size);
+        token_type_embeddings = builder.create_embedding(config.type_vocab_size, config.hidden_size);
+
+        layer_norm = builder.create_ln(config.hidden_size);
+        dropout = builder.create_dropout();
 
         RegisterComponents();
     }
+
     public override Tensor forward(
         Tensor? input_ids,
         Tensor? input_embeddings,
@@ -100,31 +132,23 @@ public class BertEmbeddings : nn.Module<Tensor?, Tensor?, Tensor?, Tensor?, Tens
     }
 }
 
-public class BertAttention : nn.Module<Tensor, Tensor?, Tensor>
+public class BertAttention : IBertAttention
 {
     public long n_head;
     public long d_head;
-    public CustomLinear qkv_proj;
-    public CustomLinear o_proj;
-    public Dropout dropout;
+    public IModule qkv_proj;
+    public IModule o_proj;
+    public IModule dropout;
 
-    public BertAttention(
-        long n_state,
-        long n_head,
-        long d_head,
-        double dropout_rate = 0.0,
-        bool qkv_bias = true,
-        bool o_bias = true,
-        torch.ScalarType? dtype = null,
-        torch.Device? device = null
-    ) : base("BertAttention")
+    public BertAttention(BertBuilder builder) : base("BertAttention")
     {
-        this.n_head = n_head;
-        this.d_head = d_head;
+        var config = builder.config;
+        n_head = config.num_attention_heads;
+        d_head = config.head_hidden_size;
 
-        qkv_proj = new CustomLinear(n_state, d_head * n_head * 3, hasBias: qkv_bias, dtype: dtype, device: device);
-        o_proj = new CustomLinear(n_head * d_head, n_state, o_bias, dtype: dtype, device: device);
-        dropout = nn.Dropout(dropout_rate);
+        qkv_proj = builder.create_linear(config.hidden_size, d_head * n_head * 3, hasBias: true);
+        o_proj = builder.create_linear(n_head * d_head, config.hidden_size, hasBias: true);
+        dropout = builder.create_dropout();
 
         RegisterComponents();
     }
@@ -158,69 +182,20 @@ public class BertAttention : nn.Module<Tensor, Tensor?, Tensor>
     }
 }
 
-public class FeedForward : nn.Module<Tensor, Tensor>
+public class BertBlock : IBertBlock
 {
-    public long hidden_dim;
-    public CustomLinear w_in;
-    public CustomLinear w_out;
-    public Dropout dropout;
-    public Func<Tensor, Tensor> act_fn;
+    public IBertAttention attn;
+    public IModule attn_ln;
+    public IModule ffn;
+    public IModule ffn_ln;
 
-    public FeedForward(
-        long dim,
-        long? hidden_dim = null,
-        double dropout_rate = 0.0,
-        bool bias = true,
-        torch.ScalarType? dtype = null,
-        torch.Device? device = null,
-        Func<Tensor, Tensor>? act_fn = null
-    ) : base("FeedForward")
+    public BertBlock(BertBuilder builder) : base("BertBlock")
     {
-        this.hidden_dim = hidden_dim ?? dim * 4;
-        w_in = new CustomLinear(dim, this.hidden_dim, hasBias: bias, dtype: dtype, device: device);
-        w_out = new CustomLinear(this.hidden_dim, dim, hasBias: bias, dtype: dtype, device: device);
-        dropout = nn.Dropout(dropout_rate);
-        this.act_fn = act_fn ?? F.gelu;
-
-        RegisterComponents();
-    }
-
-    public override Tensor forward(Tensor x)
-    {
-        using var scope = torch.NewDisposeScope();
-        var h = act_fn(w_in.call(x));
-        return scope.MoveToOuter(w_out.call(dropout.call(h)));
-    }
-}
-
-public class BertBlock : nn.Module<Tensor, Tensor?, Tensor>
-{
-    public BertAttention attn;
-    public LayerNorm attn_ln;
-    public FeedForward ffn;
-    public LayerNorm ffn_ln;
-
-    public BertBlock(BertConfig config, torch.ScalarType? dtype = null, torch.Device? device = null) : base("BertBlock")
-    {
-        attn = new BertAttention(
-            config.hidden_size,
-            config.num_attention_heads,
-            config.head_hidden_size,
-            dropout_rate: config.dropout_rate,
-            dtype: dtype, device: device);
-        attn_ln = nn.LayerNorm(
-            new[] { config.hidden_size },
-            eps: config.layernorm_epsilon,
-            dtype: dtype, device: device);
-        ffn = new FeedForward(
-            config.hidden_size,
-            config.inner_hidden_size,
-            config.dropout_rate,
-            dtype: dtype, device: device);
-        ffn_ln = nn.LayerNorm(
-            new[] { config.hidden_size },
-            eps: config.layernorm_epsilon,
-            dtype: dtype, device: device);
+        var config = builder.config;
+        attn = builder.create_bert_attention();
+        attn_ln = builder.create_ln(config.hidden_size);
+        ffn = builder.create_bert_ffn();
+        ffn_ln = builder.create_ln(config.hidden_size);
 
         RegisterComponents();
     }
@@ -234,9 +209,9 @@ public class BertBlock : nn.Module<Tensor, Tensor?, Tensor>
     }
 }
 
-public class BertPooler : nn.Module<Tensor, Tensor?, Tensor>
+public class BertPooler : IBertPooler
 {
-    public nn.Module<Tensor, Tensor> dense;
+    public IModule dense;
     private readonly List<string> pooling_mode;
     public Func<Tensor, Tensor> activation;
 
@@ -247,12 +222,20 @@ public class BertPooler : nn.Module<Tensor, Tensor?, Tensor>
 
     public static List<string> POOLING_MODES = new() { POOLER, CLS, MEAN, MAX };
 
-    public BertPooler(
-        long n_state,
-        List<string> pooling_mode,
-        Func<Tensor, Tensor>? activation = null,
-        torch.ScalarType? dtype = null,
-        torch.Device? device = null) : base("BertPooler")
+    public BertPooler(BertBuilder builder) : base("BertPooler")
+    {
+        pooling_mode = builder.config.pooling_mode;
+        validate_pooling_mode();
+
+        dense = pooling_mode.Contains(POOLER)
+            ? builder.create_linear(builder.config.hidden_size, builder.config.hidden_size)
+            : nn.Identity();
+
+        activation = F.tanh;
+        RegisterComponents();
+    }
+
+    protected void validate_pooling_mode()
     {
         // validate pooling mode
         if (pooling_mode.Count == 0)
@@ -263,14 +246,6 @@ public class BertPooler : nn.Module<Tensor, Tensor?, Tensor>
 
         if (pooling_mode.Any(x => !POOLING_MODES.Contains(x)))
             throw new Exception($"pooling_mode should only contain {string.Join(", ", POOLING_MODES)}");
-
-        dense = pooling_mode.Contains(POOLER)
-            ? new CustomLinear(n_state, n_state, dtype: dtype, device: device)
-            : nn.Identity();
-
-        this.pooling_mode = pooling_mode;
-        this.activation = activation ?? F.tanh;
-        RegisterComponents();
     }
 
     public override Tensor forward(Tensor x, Tensor? attention_mask = null)
@@ -327,7 +302,7 @@ public class BertPooler : nn.Module<Tensor, Tensor?, Tensor>
     }
 }
 
-public record BertModelInput : BatchEncoding
+public record BertModelInput : IBatchEncoding
 {
     public Tensor? input_ids { get; set; }
     public Tensor? input_embeddings { get; set; }
@@ -336,7 +311,7 @@ public record BertModelInput : BatchEncoding
     public Tensor? position_ids { get; set; }
 }
 
-public record BertModelOutput : BatchEncoding
+public record BertModelOutput : IBatchEncoding
 {
     public Tensor last_hidden_state { get; set; } = null!;
     public Tensor? pooler_output { get; set; }
@@ -346,36 +321,28 @@ public record BertModelOutput : BatchEncoding
 public class BertModel : nn.Module<BertModelInput, BertModelOutput>
 {
     public BertConfig config;
-    public BertEmbeddings embedding;
-    public ModuleList<BertBlock> layers;
-    public BertPooler? pooler;
-    public CustomLinear? classifier;
+    public IBertEmbeddings embedding;
+    public ModuleList<IBertBlock> layers;
+    public IBertPooler? pooler;
+    public IModule? classifier;
 
     public const string SEQUENCE = "sequence";
     public const string TOKEN = "token";
 
-    public BertModel(BertConfig config, torch.ScalarType? dtype = null, torch.Device? device = null) : base("BertModel")
+    public BertModel(BertBuilder builder) : base("BertModel")
     {
-        this.config = config;
+        config = builder.config;
 
-        embedding = new BertEmbeddings(
-            config.vocab_size,
-            config.hidden_size,
-            config.max_sequence_length,
-            config.type_vocab_size,
-            config.layernorm_epsilon,
-            config.dropout_rate,
-            dtype: dtype, device: device
-        );
+        embedding = builder.create_bert_embeddings();
         layers = nn.ModuleList(
             Enumerable.Range(0, config.num_layers)
-                .Select(index => new BertBlock(config, dtype: dtype, device: device)).ToArray());
+                .Select(index => builder.create_bert_block()).ToArray());
 
         if (config.pooling_mode.Count > 0)
-            pooler = new BertPooler(config.hidden_size, config.pooling_mode, dtype: dtype, device: device);
+            pooler = builder.create_bert_pooler();
 
         if (config.classifier_classes > 0)
-            classifier = new CustomLinear(config.hidden_size, config.classifier_classes, dtype: dtype, device: device);
+            classifier = builder.create_linear(config.hidden_size, config.classifier_classes);
 
         RegisterComponents();
     }
@@ -459,13 +426,13 @@ public class BertModel : nn.Module<BertModelInput, BertModelOutput>
     }
 }
 
-public class BertEncoder : MaskedLM<BertModel, BertConfig, WordPiece, WordPieceConfig>
+public class BertEncoder : MaskedLM
 {
-    public override torch.Device? device { get; protected set; }
-    public override BertModel model { get; init; }
-    public override BertConfig model_config { get; init; }
-    public override WordPiece tokenizer { get; init; }
-    public override WordPieceConfig tokenizer_config { get; init; }
+    public torch.Device? device { get; protected set; }
+    public BertModel model { get; init; }
+    public BertConfig model_config { get; init; }
+    public WordPiece tokenizer { get; init; }
+    public WordPieceConfig tokenizer_config { get; init; }
 
 #nullable disable
     protected BertEncoder() { }
@@ -483,8 +450,8 @@ public class BertEncoder : MaskedLM<BertModel, BertConfig, WordPiece, WordPieceC
         torch.ScalarType? dtype = null,
         torch.Device? device = null)
     {
-        var (model, model_config) = model_from_pretrained(path, dtype, device);
-        var (tokenizer, tokenizer_config) = tokenizer_from_pretrained(path);
+        var (model, model_config) = model_from_pretrained<BertModel, BertConfig, BertBuilder>(path, dtype, device);
+        var (tokenizer, tokenizer_config) = tokenizer_from_pretrained<WordPiece, WordPieceConfig>(path);
         return new BertEncoder()
         {
             device = device,

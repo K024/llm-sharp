@@ -18,11 +18,11 @@ awq_layernorm_forward(const Tensor input, const Tensor gamma, float eps)
     return ResultTensor(res);
 }
 
-// EXPORT_API(Tensor)
-// awq_gemm_forward(const Tensor in_feats, const Tensor kernel, const Tensor scaling_factors, const Tensor zeros, int split_k_iters)
-// {
-//     CATCH_TENSOR(gemm_forward_cuda(*in_feats, *kernel, *scaling_factors, *zeros, split_k_iters));
-// }
+EXPORT_API(Tensor)
+awq_gemm_forward(const Tensor in_feats, const Tensor kernel, const Tensor scaling_factors, const Tensor zeros, int split_k_iters)
+{
+    CATCH_TENSOR(gemm_forward_cuda(*in_feats, *kernel, *scaling_factors, *zeros, split_k_iters));
+}
 
 EXPORT_API(Tensor)
 awq_gemmv2_forward(const Tensor in_feats, const Tensor kernel, const Tensor scaling_factors, const Tensor zeros, int group_size, int split_k_iters)

@@ -14,7 +14,7 @@ public record BPEConfig
     public string pattern { get; set; } = "'s|'t|'re|'ve|'m|'ll|'d| ?\\p{L}+| ?\\p{N}+| ?[^\\s\\p{L}\\p{N}]+|\\s+(?!\\S)|\\s+";
 }
 
-public class BPE
+public class BPE : ITokenizer
 {
     // modified from https://github.com/huggingface/transformers/blob/main/src/transformers/models/gpt2/tokenization_gpt2.py
 

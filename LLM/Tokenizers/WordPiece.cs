@@ -22,7 +22,7 @@ public record WordPieceConfig
     }
 }
 
-public class WordPiece
+public class WordPiece : ITokenizer
 {
     // modified from https://github.com/huggingface/transformers/blob/main/src/transformers/models/bert/tokenization_bert.py
 

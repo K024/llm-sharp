@@ -1,12 +1,12 @@
 using TorchSharp;
 using llm_sharp.LLM.Tokenizers;
-using llm_sharp.LLM.Utils;
+using llm_sharp.LLM.Pretrained;
 
 namespace llm_sharp.LLM.Models;
 
 using Tensor = torch.Tensor;
 
-public class Qwen : GenerativeLM<LLaMAModel, LLaMAConfig, TikToken, TikTokenConfig, Qwen.QwenState>
+public class Qwen : GenerativeLM<Qwen.QwenState>
 {
     public class QwenState : IDisposable
     {
@@ -19,11 +19,11 @@ public class Qwen : GenerativeLM<LLaMAModel, LLaMAConfig, TikToken, TikTokenConf
         }
     }
 
-    public override torch.Device? device { get; protected set; }
-    public override LLaMAModel model { get; init; }
-    public override LLaMAConfig model_config { get; init; }
-    public override TikToken tokenizer { get; init; }
-    public override TikTokenConfig tokenizer_config { get; init; }
+    public torch.Device? device { get; protected set; }
+    public LlamaModel model { get; init; }
+    public LlamaConfig model_config { get; init; }
+    public TikToken tokenizer { get; init; }
+    public TikTokenConfig tokenizer_config { get; init; }
 
 #nullable disable
     protected Qwen() { }
@@ -41,8 +41,8 @@ public class Qwen : GenerativeLM<LLaMAModel, LLaMAConfig, TikToken, TikTokenConf
         torch.ScalarType? dtype = null,
         torch.Device? device = null)
     {
-        var (model, model_config) = model_from_pretrained(path, dtype, device);
-        var (tokenizer, tokenizer_config) = tokenizer_from_pretrained(path);
+        var (model, model_config) = model_from_pretrained<LlamaModel, LlamaConfig, LlamaBuilder>(path, dtype, device);
+        var (tokenizer, tokenizer_config) = tokenizer_from_pretrained<TikToken, TikTokenConfig>(path);
         return new Qwen()
         {
             device = device,

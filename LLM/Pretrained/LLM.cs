@@ -3,7 +3,7 @@ using System.Text;
 using System.Threading.Channels;
 using TorchSharp;
 
-namespace llm_sharp.LLM.Utils;
+namespace llm_sharp.LLM.Pretrained;
 
 using Tensor = torch.Tensor;
 using TensorIndex = torch.TensorIndex;
@@ -75,26 +75,7 @@ public abstract partial class LLM
     }
 }
 
-
-public abstract partial class LLM<TModel, TModelConfig, TTokenizer, TTokenizerConfig> : LLM
-    where TModel : class
-    where TModelConfig : class
-    where TTokenizer : class
-    where TTokenizerConfig : class
-{
-    public abstract torch.Device? device { get; protected set; }
-    public abstract TModel model { get; init; }
-    public abstract TModelConfig model_config { get; init; }
-    public abstract TTokenizer tokenizer { get; init; }
-    public abstract TTokenizerConfig tokenizer_config { get; init; }
-}
-
-public abstract class GenerativeLM<TModel, TModelConfig, TTokenizer, TTokenizerConfig, TState>
-        : LLM<TModel, TModelConfig, TTokenizer, TTokenizerConfig>
-    where TModel : class
-    where TModelConfig : class
-    where TTokenizer : class
-    where TTokenizerConfig : class
+public abstract class GenerativeLM<TState> : LLM
     where TState : class, IDisposable
 {
     public override bool can_chat => true;
@@ -228,12 +209,7 @@ public abstract class GenerativeLM<TModel, TModelConfig, TTokenizer, TTokenizerC
     }
 }
 
-public abstract class MaskedLM<TModel, TModelConfig, TTokenizer, TTokenizerConfig>
-        : LLM<TModel, TModelConfig, TTokenizer, TTokenizerConfig>
-    where TModel : class
-    where TModelConfig : class
-    where TTokenizer : class
-    where TTokenizerConfig : class
+public abstract class MaskedLM : LLM
 {
     public override bool can_encode => true;
 
