@@ -61,8 +61,8 @@ public class LlamaBuilder : AbstractBuilder
 
     public virtual new LlamaConfig config { get => (LlamaConfig)base.config; set => base.config = value; }
 
-    public virtual IModule create_ln(params long[] shape)
-        => new RMSNorm(shape, config.layernorm_epsilon, dtype: dtype, device: device);
+    public virtual IModule create_ln()
+        => new RMSNorm(new []{ config.hidden_size }, config.layernorm_epsilon, dtype: dtype, device: device);
 
     public virtual IModule create_dropout() => nn.Dropout(config.dropout_rate);
 
@@ -94,8 +94,6 @@ public class LlamaAttention : ILlamaAttention
         n_kv_head = config.num_key_value_heads;
         d_head = config.head_hidden_size;
 
-        if (d_head % (4 * n_head) != 0)
-            throw new Exception("d_head should be multiple of n_head");
         if (n_head % n_kv_head != 0)
             throw new Exception("n_head should be multiple of n_kv_head");
         n_groups = (int)(n_head / n_kv_head);
@@ -254,7 +252,7 @@ public class LlamaModel : nn.Module<LlamaModelInput, LlamaModelOutput>
         layers = nn.ModuleList(
             Enumerable.Range(0, config.num_layers)
                 .Select(index => builder.create_llama_block()).ToArray());
-        final_ln = builder.create_ln(config.hidden_size);
+        final_ln = builder.create_ln();
         lm_head = builder.create_linear(config.hidden_size, config.vocab_size, hasBias: false);
         rotary = builder.create_rotary_embedding();
 

@@ -477,6 +477,7 @@ public class BertEncoder : MaskedLM
         var input_ids = torch.tensor(tokens, dtype: torch.int64, device: device).unsqueeze(0);
         var type_ids = torch.zeros_like(input_ids);
 
+        model.eval();
         var result = model.call(new BertModelInput()
         {
             input_ids = input_ids,

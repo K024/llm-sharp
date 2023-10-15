@@ -1,11 +1,11 @@
 using llm_sharp.LLM.Utils;
+using llm_sharp.NativeOps;
 using TorchSharp;
 
 namespace llm_sharp.Tests;
 
 using Tensor = torch.Tensor;
 using TensorIndex = torch.TensorIndex;
-using ops = NativeOps.NativeOps;
 
 [TestClass]
 public class NativeOpsTests
@@ -20,7 +20,7 @@ public class NativeOpsTests
     [TestMethod]
     public void NativeOps_ShouldWork()
     {
-        var result = ops.hello(torch.ones(2, 3, 4, device: torch.CUDA));
+        var result = Ops.hello(torch.ones(2, 3, 4, device: torch.CUDA));
 
         Assert.IsTrue((result == 2).all().item<bool>());
     }
@@ -62,8 +62,8 @@ public class NativeOpsTests
             var scales = torch.clamp(max - min, min: 1e-10) / 15;
             var zeros = torch.nn.functional.relu(-min);
 
-            x = torch.clamp(torch.round((x + zeros) / scales), 0, 15).to(torch.int32).reshape(out_dim, in_dim);
-            zeros = torch.clamp(torch.round(zeros / scales), 0, 15).to(torch.int32).reshape(out_dim, in_dim / group_size);
+            x = torch.clamp(torch.round((x + zeros) / scales + 0.5), 0, 15).to(torch.int32).reshape(out_dim, in_dim);
+            zeros = torch.clamp(torch.round(zeros / scales + 0.5), 0, 15).to(torch.int32).reshape(out_dim, in_dim / group_size);
 
             return (x, zeros, scales.reshape(out_dim, in_dim / group_size));
         }
@@ -88,7 +88,7 @@ public class NativeOpsTests
 
         var reference = x.matmul(deq_a.t());
 
-        var output = ops.awq_gemmv2_forward(
+        var output = Ops.awq_gemmv2_forward(
             x,
             pack_u4(qa),
             scales,
@@ -99,7 +99,7 @@ public class NativeOpsTests
         Assert.IsTrue((reference - output).abs().max().to(torch.float32).item<float>() < 0.05);
         Assert.IsTrue((reference - output).abs().mean().to(torch.float32).item<float>() < 0.005);
 
-        var output2 = ops.exllama_q4_matmul_cuda(
+        var output2 = Ops.exllama_q4_matmul_cuda(
             x,
             pack_u4(qa).T.contiguous(),
             scales.T.contiguous(),
@@ -110,7 +110,7 @@ public class NativeOpsTests
         Assert.IsTrue((reference - output2).abs().max().to(torch.float32).item<float>() < 0.05);
         Assert.IsTrue((reference - output2).abs().mean().to(torch.float32).item<float>() < 0.005);
 
-        var output3 = ops.awq_gemm_forward(
+        var output3 = Ops.awq_gemm_forward(
             x,
             pack_u4(qa.T, order: new[] { 0, 2, 4, 6, 1, 3, 5, 7 }),
             scales.T.contiguous(),

@@ -95,6 +95,7 @@ if torch_ext.IS_WINDOWS:
         "--use_fast_math",
     ]
     extra_cuda_cflags += get_compute_capabilities()
+    extra_ld_flags = []
 
 else:
     extra_cflags += [
@@ -115,6 +116,9 @@ else:
         "--use_fast_math",
     ]
     extra_cuda_cflags += get_compute_capabilities()
+    extra_ld_flags = [
+        f"-L{p}" for p in torch_ext.library_paths(cuda=True)
+    ]
 
 
 torch_ext.load(
@@ -123,6 +127,7 @@ torch_ext.load(
     build_directory=str(build_path),
     extra_cflags=extra_cflags,
     extra_cuda_cflags=extra_cuda_cflags,
+    extra_ldflags=extra_ld_flags,
     with_cuda=True,
     is_python_module=False,
     verbose=True
@@ -139,7 +144,7 @@ if torch_ext.IS_WINDOWS:
 
 elif torch_ext.IS_LINUX:
     build_target = build_path / (build_name + torch_ext.LIB_EXT)
-    runtimes_target = runtimes_path / "linux-x64" / "native" / (build_name + torch_ext.CLIB_EXT)
+    runtimes_target = runtimes_path / "linux-x64" / "native" / ("lib" + build_name + torch_ext.CLIB_EXT)
     runtimes_target.parent.mkdir(parents=True, exist_ok=True)
     shutil.copy(build_target, runtimes_target)
 

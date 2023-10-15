@@ -172,6 +172,12 @@ public class Safetensors : IDisposable
                 if (tensor.dtype is ScalarType.Float32 or ScalarType.Float16 or ScalarType.BFloat16)
                     data = data.type_as(tensor);
 
+                if (!tensor.shape.SequenceEqual(data.shape))
+                    throw new ArgumentException(
+                        $"Key '{key}' shape mismatch " +
+                        $"source: {string.Join(',', data.shape)}" +
+                        $"target: {string.Join(',', tensor.shape)}");
+
                 // cross device copy is allowed
                 tensor.copy_(data);
                 state_dict.Remove(key);

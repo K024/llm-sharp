@@ -13,4 +13,8 @@
     <PackageReference Include="TupleAsJsonArray" Version="1.0.2" />
   </ItemGroup>
 
+  <ItemGroup>
+    <ProjectReference Include="../NativeOps/NativeOps.csproj" />
+  </ItemGroup>
+
 </Project>

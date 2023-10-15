@@ -16,7 +16,7 @@
 
 #define EXPORT_API(ret) extern "C" __declspec(dllexport) ret
 #else
-#include "UnixSal.h"
+// #include "UnixSal.h"
 
 #define EXPORT_API(ret) extern "C" __attribute__((visibility("default"))) ret
 
@@ -25,6 +25,7 @@
 
 #include <string>
 
+#undef TORCH_API_INCLUDE_EXTENSION_H
 #include "torch/torch.h"
 
 extern thread_local char *torch_last_err;

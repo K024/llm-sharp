@@ -8,15 +8,22 @@ TODO list:
 - Python resources interop
   - [x] Safetensors
   - [ ] Convert scripts
-- Introduce more models & tokenizers
-  - [ ] LLaMa2 family (Sentencepiece BPE)
-  - [x] Qwen 7B (Tiktoken)
-  - [ ] Bert family (Wordpiece)
+- Introduce more models
+  - [ ] Llama2 family (Qwen tested √)
+  - [ ] Bert family (Ernie tested √)
+- Introduce more tokenizers
+  - [x] BPE
+  - [x] BPE (SentencePiece)
+  - [x] Tiktoken (BPE)
+  - [x] Unigram (SentencePiece)
+  - [x] WordPiece
+  - [ ] Unit tests
 - Model parallel
   - [ ] Layer parallel
   - [ ] ~~Tensor parallel~~ Needs NCCL support.
 - Specialized cuda ops
-  - [ ] C# cuda op loading
+  - [x] C# cuda op loading
   - [ ] GPTQ int4 ops
+  - [x] AWQ int4 ops
   - [ ] Flash attention
   - [ ] Fused ops (RMS norm, Rotary embeddings)

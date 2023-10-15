@@ -13,7 +13,7 @@ using Tensor = torch.Tensor;
 using ScalarType = torch.ScalarType;
 using Device = torch.Device;
 
-public abstract partial class LLM
+public abstract partial class LanguageModel
 {
     public static JsonSerializerOptions TupleJsonSerializerOptions { get; } = new()
     {
@@ -22,20 +22,24 @@ public abstract partial class LLM
         WriteIndented = true,
     };
 
-    public static LLM from_pretrained(
+    public const string model_config_file = "model_config.json";
+    public const string tokenizer_config_file = "tokenizer_config.json";
+    public const string model_weights_pattern = "*.safetensors";
+
+    public static LanguageModel from_pretrained(
         string classHint,
         string path,
         ScalarType? dtype = null,
         Device? device = null,
         Assembly? assembly = null)
     {
-        var types = (assembly ?? typeof(LLM).Assembly).GetTypes();
+        var types = (assembly ?? typeof(LanguageModel).Assembly).GetTypes();
 
         var type = types.Where(x =>
             x.Name == classHint
             && x.IsClass
             && !x.IsAbstract
-            && x.IsSubclassOf(typeof(LLM))
+            && x.IsSubclassOf(typeof(LanguageModel))
         )
             .FirstOrDefault()
             ?? throw new Exception($"Unable to find class '{classHint}'. Try give the correct Assembly");
@@ -49,12 +53,8 @@ public abstract partial class LLM
         var result = type_from_pretrained.Invoke(null, new object?[] { path, dtype, device })
             ?? throw new Exception($"Unable to create class {classHint} with from_pretrained");
 
-        return (LLM)result;
+        return (LanguageModel)result;
     }
-
-    public const string model_config_file = "model_config.json";
-    public const string tokenizer_config_file = "tokenizer_config.json";
-    public const string model_weights_pattern = "*.safetensors";
 
     public static (TModel, TModelConfig) model_from_pretrained<TModel, TModelConfig, TBuilder>(
         string path,

@@ -1,3 +1,4 @@
+using llm_sharp.LLM.Pretrained;
 using llm_sharp.LLM.Utils;
 using Microsoft.Extensions.Options;
 using TorchSharp;
@@ -33,7 +34,7 @@ public class LLMService
     }
 
     private string default_model = "";
-    private Dictionary<string, LLM.Utils.LLM> models = new();
+    private Dictionary<string, LanguageModel> models = new();
     private Dictionary<string, string> modelByName = new();
 
     public IEnumerable<string> Models => modelByName.Keys;
@@ -63,7 +64,7 @@ public class LLMService
                 if (models.ContainsKey(model.path))
                     continue;
 
-                var model_instance = LLM.Utils.LLM.from_pretrained(
+                var model_instance = LanguageModel.from_pretrained(
                     model.type,
                     model.path,
                     model.use_bfloat16 ? torch.bfloat16 : torch.float16,
@@ -90,7 +91,7 @@ public class LLMService
         }
     }
 
-    public LLM.Utils.LLM? FindModel(string? model)
+    public LanguageModel? FindModel(string? model)
     {
         if (string.IsNullOrWhiteSpace(model))
             model = default_model;

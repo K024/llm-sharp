@@ -1,8 +1,7 @@
 using TorchSharp;
+using llm_sharp.LLM.Pretrained;
 
 namespace llm_sharp.LLM.Utils;
-
-using LLM = Pretrained.LLM;
 
 public static class CliExtensions
 {
@@ -20,7 +19,7 @@ public static class CliExtensions
         }
     }
 
-    public static void start_chat_cli(this LLM llm)
+    public static void start_chat_cli(this LanguageModel llm)
     {
         var history = new List<(string query, string answer)>();
         var print_perf = false;

@@ -1,10 +1,33 @@
 #include "utils.hpp"
 
-#include "../third-party/AutoAWQ/awq_cuda/layernorm/layernorm.h"
-#include "../third-party/AutoAWQ/awq_cuda/quantization/gemm_cuda.h"
-#include "../third-party/AutoAWQ/awq_cuda/quantization/gemv_cuda.h"
-#include "../third-party/AutoAWQ/awq_cuda/position_embedding/pos_encoding.h"
+// #include "../third-party/AutoAWQ/awq_cuda/layernorm/layernorm.h"
+// #include "../third-party/AutoAWQ/awq_cuda/quantization/gemm_cuda.h"
+// #include "../third-party/AutoAWQ/awq_cuda/quantization/gemv_cuda.h"
+// #include "../third-party/AutoAWQ/awq_cuda/position_embedding/pos_encoding.h"
 // #include "../third-party/AutoAWQ/awq_cuda/attention/ft_attention.h"
+
+void layernorm_forward_cuda(torch::Tensor _input, torch::Tensor _gamma, torch::Tensor _out, float eps);
+
+torch::Tensor gemm_forward_cuda(torch::Tensor _in_feats, torch::Tensor _kernel,
+    torch::Tensor _scaling_factors, torch::Tensor _zeros, int split_k_iters);
+
+torch::Tensor gemmv2_forward_cuda(torch::Tensor _in_feats, torch::Tensor _kernel,
+    torch::Tensor _scaling_factors, torch::Tensor _zeros, int group_size, int split_k_iters);
+
+torch::Tensor gemv_forward_cuda(
+    torch::Tensor _in_feats,
+    torch::Tensor _kernel,
+    torch::Tensor _scaling_factors,
+    torch::Tensor _zeros,
+    int group_size);
+
+void rotary_embedding_neox(
+  torch::Tensor& positions,
+  torch::Tensor& query,
+  torch::Tensor& key,
+  int head_size,
+  torch::Tensor& cos_sin_cache);
+
 
 EXPORT_API(Tensor)
 awq_layernorm_forward(const Tensor input, const Tensor gamma, float eps)

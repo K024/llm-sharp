@@ -1,6 +1,7 @@
 using TorchSharp;
 using llm_sharp.LLM.Tokenizers;
 using llm_sharp.LLM.Pretrained;
+using llm_sharp.LLM.Layers;
 
 namespace llm_sharp.LLM.Models;
 
@@ -76,6 +77,7 @@ public class Qwen : GenerativeLM<Qwen.QwenState>
 
         var input_ids = torch.tensor(tokens, dtype: torch.int64, device: device).unsqueeze(0);
 
+        model.eval();
         var output = model.call(new()
         {
             input_ids = input_ids,
@@ -102,5 +104,55 @@ public class Qwen : GenerativeLM<Qwen.QwenState>
     protected override List<int> get_eos_tokens()
     {
         return tokenizer.eos_ids;
+    }
+}
+
+class LlamaAwqBuilder : LlamaBuilder
+{
+    public LlamaAwqBuilder(LlamaConfig config) : base(config) { }
+
+    private bool creating_block = false;
+
+    public override
+        torch.nn.Module<Tensor, (Tensor cos, Tensor sin), Tensor?, (Tensor k_cache, Tensor v_cache)?,
+            (Tensor h, (Tensor k_cache, Tensor v_cache) kv_cache)>
+        create_llama_block()
+    {
+        try
+        {
+            creating_block = true;
+            return base.create_llama_block();
+        }
+        finally
+        {
+            creating_block = false;
+        }
+    }
+
+    public override torch.nn.Module<Tensor, Tensor> create_linear(long input_size, long output_size, bool hasBias = true)
+    {
+        if (!creating_block)
+            return base.create_linear(input_size, output_size, hasBias);
+        return new AwqLinear(input_size, output_size, hasBias, dtype, device);
+    }
+}
+
+public class QwenAwq : Qwen
+{
+    public static new Qwen from_pretrained(
+        string path,
+        torch.ScalarType? dtype = null,
+        torch.Device? device = null)
+    {
+        var (model, model_config) = model_from_pretrained<LlamaModel, LlamaConfig, LlamaAwqBuilder>(path, dtype, device);
+        var (tokenizer, tokenizer_config) = tokenizer_from_pretrained<TikToken, TikTokenConfig>(path);
+        return new QwenAwq()
+        {
+            device = device,
+            model = model,
+            model_config = model_config,
+            tokenizer = tokenizer,
+            tokenizer_config = tokenizer_config,
+        };
     }
 }

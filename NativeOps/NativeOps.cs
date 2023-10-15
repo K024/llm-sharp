@@ -3,7 +3,7 @@ using TorchSharp;
 
 namespace llm_sharp.NativeOps;
 
-public static class NativeOps
+public static class Ops
 {
     [DllImport("llm_sharp_ops")]
     internal static extern IntPtr llm_sharp_check_last_err();
@@ -61,10 +61,12 @@ public static class NativeOps
     /// </summary>
     public static torch.Tensor awq_gemm_forward(torch.Tensor in_feats, torch.Tensor kernel, torch.Tensor scaling_factors, torch.Tensor zeros)
     {
+        var outputShape = in_feats.shape.SkipLast(1).Concat(new[] { kernel.shape[1] * 8 }).ToArray();
+        in_feats = in_feats.reshape(-1, in_feats.shape[^1]);
         var split_k_iters = 8;
         var result = awq_gemm_forward(in_feats.Handle, kernel.Handle, scaling_factors.Handle, zeros.Handle, split_k_iters);
         CheckForErrors();
-        return torch.Tensor.UnsafeCreateTensor(result);
+        return torch.Tensor.UnsafeCreateTensor(result).reshape(outputShape);
     }
 
     /// <param name="in_feats">[batch, in_dim]</param>
@@ -73,17 +75,21 @@ public static class NativeOps
     /// <param name="zeros">[out_dim, in_dim // group_size // 8]</param>
     public static torch.Tensor awq_gemmv2_forward(torch.Tensor in_feats, torch.Tensor kernel, torch.Tensor scaling_factors, torch.Tensor zeros, int group_size)
     {
+        var outputShape = in_feats.shape.SkipLast(1).Concat(new[] { kernel.shape[0] }).ToArray();
+        in_feats = in_feats.reshape(-1, in_feats.shape[^1]);
         var split_k_iters = 8;
         var result = awq_gemmv2_forward(in_feats.Handle, kernel.Handle, scaling_factors.Handle, zeros.Handle, group_size, split_k_iters);
         CheckForErrors();
-        return torch.Tensor.UnsafeCreateTensor(result);
+        return torch.Tensor.UnsafeCreateTensor(result).reshape(outputShape);
     }
 
     public static torch.Tensor awq_gemv_forward(torch.Tensor in_feats, torch.Tensor kernel, torch.Tensor scaling_factors, torch.Tensor zeros, int group_size)
     {
+        var outputShape = in_feats.shape.SkipLast(1).Concat(new[] { kernel.shape[0] }).ToArray();
+        in_feats = in_feats.reshape(-1, in_feats.shape[^1]);
         var result = awq_gemv_forward(in_feats.Handle, kernel.Handle, scaling_factors.Handle, zeros.Handle, group_size);
         CheckForErrors();
-        return torch.Tensor.UnsafeCreateTensor(result);
+        return torch.Tensor.UnsafeCreateTensor(result).reshape(outputShape);
     }
 
     public static void awq_rotary_embedding_neox(torch.Tensor positions, torch.Tensor query, torch.Tensor key, int head_size, torch.Tensor cos_sin_cache)

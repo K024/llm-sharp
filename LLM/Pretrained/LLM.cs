@@ -19,7 +19,7 @@ public record GenerationConfig
     public virtual List<string> eos_tokens { get; set; } = new();
 }
 
-public abstract partial class LLM
+public abstract partial class LanguageModel
 {
     public virtual bool can_chat => false;
 
@@ -75,7 +75,7 @@ public abstract partial class LLM
     }
 }
 
-public abstract class GenerativeLM<TState> : LLM
+public abstract class GenerativeLM<TState> : LanguageModel
     where TState : class, IDisposable
 {
     public override bool can_chat => true;
@@ -209,7 +209,7 @@ public abstract class GenerativeLM<TState> : LLM
     }
 }
 
-public abstract class MaskedLM : LLM
+public abstract class MaskedLM : LanguageModel
 {
     public override bool can_encode => true;
 
