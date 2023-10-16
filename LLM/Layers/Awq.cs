@@ -78,12 +78,36 @@ public class AwqLinear : nn.Module<Tensor, Tensor>
         RegisterComponents();
     }
 
+    protected bool is_converted_turbomind = false;
+    public void convert_turbomind()
+    {
+        var (qw, sz) = Ops.turbomind_convert_s4_k_m8(qweight, scales, qzeros, group_size);
+
+        qweight.Dispose();
+        scales.Dispose();
+        qzeros.Dispose();
+
+        qweight = new Parameter(qw, false);
+        scales = new Parameter(sz, false);
+        qzeros = new Parameter(torch.tensor(0), false);
+
+        is_converted_turbomind = true;
+    }
+
     public override Tensor forward(Tensor input)
     {
         using var scope = torch.NewDisposeScope();
-        var output = Ops.awq_gemm_forward(input, qweight, scales, qzeros);
+
+        Tensor output;
+
+        if (!is_converted_turbomind)
+            output = Ops.awq_gemm_forward(input, qweight, scales, qzeros);
+        else
+            output = Ops.turbomind_gemm_s4_f16(input, qweight, scales, group_size);
+
         if (bias is not null)
             output += bias;
+
         return scope.MoveToOuter(output);
     }
 }

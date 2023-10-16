@@ -146,6 +146,12 @@ public class QwenAwq : Qwen
     {
         var (model, model_config) = model_from_pretrained<LlamaModel, LlamaConfig, LlamaAwqBuilder>(path, dtype, device);
         var (tokenizer, tokenizer_config) = tokenizer_from_pretrained<TikToken, TikTokenConfig>(path);
+
+        Console.WriteLine("Converting to TurboMind format...");
+        foreach (var module in model.modules())
+            if (module is AwqLinear awq)
+                awq.convert_turbomind();
+
         return new QwenAwq()
         {
             device = device,

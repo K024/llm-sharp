@@ -11,6 +11,7 @@ public static class Ops
     [DllImport("llm_sharp_ops")]
     internal static extern IntPtr llm_sharp_hello(IntPtr handle);
 
+    //////////////////////////////////
 
     [DllImport("llm_sharp_ops")]
     internal static extern IntPtr awq_layernorm_forward(IntPtr input, IntPtr gamma, float eps);
@@ -27,9 +28,15 @@ public static class Ops
     [DllImport("llm_sharp_ops")]
     internal static extern void awq_rotary_embedding_neox(IntPtr positions, IntPtr query, IntPtr key, int head_size, IntPtr cos_sin_cache);
 
-    [DllImport("llm_sharp_ops")]
-    internal static extern void exllama_q4_matmul_cuda(IntPtr input, IntPtr qweight, IntPtr scales, IntPtr qzeros, IntPtr output);
+    //////////////////////////////////
 
+    [DllImport("llm_sharp_ops")]
+    internal static extern IntPtr turbomind_gemm_s4_f16(IntPtr input, IntPtr qweight, IntPtr scales_and_zeros, int group_size);
+
+    [DllImport("llm_sharp_ops")]
+    internal static extern void turbomind_convert_s4_k_m8(IntPtr qweight_dst, IntPtr scale_and_zeros_dst, IntPtr qweight, IntPtr scales, IntPtr qzeros, int group_size);
+
+    //////////////////////////////////
 
     public static void CheckForErrors()
     {
@@ -106,11 +113,34 @@ public static class Ops
     /// <param name="qzeros">[in_dim // group_size, out_dim // 8]</param>
     public static torch.Tensor exllama_q4_matmul_cuda(torch.Tensor input, torch.Tensor qweight, torch.Tensor scales, torch.Tensor qzeros)
     {
-        var outputShape = input.shape.SkipLast(1).Concat(new[] { qweight.shape[1] }).ToArray();
+        throw new NotImplementedException();
+    }
+
+    /// <param name="input">[n, k]</param>
+    /// <param name="qweight">[k, m // 8] should be permuted with </param>
+    /// <param name="scales_and_zeros">[k / group_size, m] with packed [zero: f16, scale: f16]</param>
+    /// <summary>
+    /// pack_order: [0, 2, 4, 6, 1, 3, 5, 7] for each packed element
+    /// </summary>
+    public static torch.Tensor turbomind_gemm_s4_f16(torch.Tensor input, torch.Tensor qweight, torch.Tensor scales_and_zeros, int group_size)
+    {
+        var outputShape = input.shape.SkipLast(1).Concat(new[] { qweight.shape[1] * 8 }).ToArray();
         input = input.reshape(-1, input.shape[^1]);
-        var output = torch.empty(new[] { input.shape[0], qweight.shape[1] }, dtype: input.dtype, device: input.device);
-        exllama_q4_matmul_cuda(input.Handle, qweight.Handle, scales.Handle, qzeros.Handle, output.Handle);
+        var result = turbomind_gemm_s4_f16(input.Handle, qweight.Handle, scales_and_zeros.Handle, group_size);
         CheckForErrors();
-        return output.reshape(outputShape);
+        return torch.Tensor.UnsafeCreateTensor(result).reshape(outputShape);
+    }
+
+    public static (torch.Tensor qweight, torch.Tensor scale_and_zeros) turbomind_convert_s4_k_m8(torch.Tensor qweight, torch.Tensor scales, torch.Tensor qzeros, int group_size)
+    {
+        if (qweight.device.type != DeviceType.CUDA)
+            throw new ArgumentException("qweight must be on CUDA device");
+
+        var qweight_dst = torch.empty_like(qweight);
+        var scale_and_zeros_dst = torch.empty(scales.shape[0], scales.shape[1], 2, dtype: torch.float16, device: scales.device);
+
+        turbomind_convert_s4_k_m8(qweight_dst.Handle, scale_and_zeros_dst.Handle, qweight.Handle, scales.Handle, qzeros.Handle, group_size);
+        CheckForErrors();
+        return (qweight_dst, scale_and_zeros_dst);
     }
 }

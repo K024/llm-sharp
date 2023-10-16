@@ -9,8 +9,8 @@ root = Path(__file__).parent
 build_path = root / "build"
 build_path.mkdir(parents=True, exist_ok=True)
 
-auto_gptq = root / "third-party/AutoGPTQ/autogptq_cuda"
 auto_awq = root / "third-party/AutoAWQ/awq_cuda"
+lmdeploy = root / "third-party/lmdeploy"
 
 sources = [
     root / "src/nativeops.cpp", 
@@ -23,19 +23,15 @@ sources = [
     # auto_awq / "attention/ft_attention.cpp",
     # auto_awq / "attention/decoder_masked_multihead_attention.cu",
 
-    # root / "src/autogptq_ops.cpp",
-    # auto_gptq / "autogptq_cuda_64.cpp",
-    # auto_gptq / "autogptq_cuda_kernel_64.cu",
-
-    root / "src/exllama_ops.cpp",
-    auto_gptq / "exllama/cuda_func/q4_matrix.cu",
-    # auto_gptq / "exllama/cuda_func/q4_matmul.cu",
-    root / "src/exllama_q4_matmul.cu",
+    root / "src/lmdeploy_ops.cpp",
+    lmdeploy / "src/turbomind/kernels/gemm_s_f16/format.cu",
+    lmdeploy / "src/turbomind/kernels/gemm_s_f16/gemm_s4_f16.cu",
 ]
 
 extra_cflags = []
-
 extra_cuda_cflags = []
+extra_ld_flags = []
+extra_include_paths = [str(lmdeploy)]
 
 
 if "include" in sys.argv:
@@ -91,11 +87,16 @@ if torch_ext.IS_WINDOWS:
     extra_cuda_cflags += [
         "-O3", 
         "-std=c++17",
-        "-DENABLE_BF16",
+        # "-DENABLE_BF16",
+        "-U__CUDA_NO_HALF_OPERATORS__",
+        "-U__CUDA_NO_HALF_CONVERSIONS__",
+        "-U__CUDA_NO_BFLOAT16_OPERATORS__",
+        "-U__CUDA_NO_BFLOAT16_CONVERSIONS__",
+        "-U__CUDA_NO_BFLOAT162_OPERATORS__",
+        "-U__CUDA_NO_BFLOAT162_CONVERSIONS__",
         "--use_fast_math",
     ]
     extra_cuda_cflags += get_compute_capabilities()
-    extra_ld_flags = []
 
 else:
     extra_cflags += [
@@ -104,7 +105,7 @@ else:
     extra_cuda_cflags += [
         "-O3", 
         "-std=c++17",
-        "-DENABLE_BF16",
+        # "-DENABLE_BF16",
         "-U__CUDA_NO_HALF_OPERATORS__",
         "-U__CUDA_NO_HALF_CONVERSIONS__",
         "-U__CUDA_NO_BFLOAT16_OPERATORS__",
@@ -116,7 +117,7 @@ else:
         "--use_fast_math",
     ]
     extra_cuda_cflags += get_compute_capabilities()
-    extra_ld_flags = [
+    extra_ld_flags += [
         f"-L{p}" for p in torch_ext.library_paths(cuda=True)
     ]
 
@@ -128,6 +129,7 @@ torch_ext.load(
     extra_cflags=extra_cflags,
     extra_cuda_cflags=extra_cuda_cflags,
     extra_ldflags=extra_ld_flags,
+    extra_include_paths=extra_include_paths,
     with_cuda=True,
     is_python_module=False,
     verbose=True

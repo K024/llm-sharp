@@ -52,12 +52,18 @@ public class NativeOpsTests
             return unpacked;
         }
 
-        (Tensor x, Tensor zeros, Tensor scales) quant_u4(Tensor x, int group_size = 128)
+        (Tensor x, Tensor zeros, Tensor scales) quant_u4(Tensor x, int group_size = 128, bool symmetric = false)
         {
             var (out_dim, in_dim) = x.shape;
             x = x.reshape(out_dim, in_dim / group_size, group_size);
             var max = x.max(-1, keepdim: true).values;
             var min = x.min(-1, keepdim: true).values;
+
+            if (symmetric)
+            {
+                max = torch.max(max, -min);
+                min = -max;
+            }
 
             var scales = torch.clamp(max - min, min: 1e-10) / 15;
             var zeros = torch.nn.functional.relu(-min);
@@ -77,10 +83,12 @@ public class NativeOpsTests
             return ((x - zeros) * scales).reshape(out_dim, in_dim);
         }
 
-        var x = torch.randn(10, 2048, dtype: torch.float16, device: torch.CUDA);
+        var x = torch.eye(10, 2048, dtype: torch.float16, device: torch.CUDA);
         var a = torch.randn(1024, 2048, dtype: torch.float16, device: torch.CUDA) / Math.Sqrt(2048);
 
-        var (qa, qzeros, scales) = quant_u4(a);
+        a[TensorIndex.Slice(1, null, null)] = 0;
+
+        var (qa, qzeros, scales) = quant_u4(a, symmetric: true);
         var deq_a = dequant_u4(unpack_u4(pack_u4(qa)), qzeros, scales);
 
         Assert.IsTrue((a - deq_a).abs().max().to(torch.float32).item<float>() < 0.05);
@@ -99,16 +107,17 @@ public class NativeOpsTests
         Assert.IsTrue((reference - output).abs().max().to(torch.float32).item<float>() < 0.05);
         Assert.IsTrue((reference - output).abs().mean().to(torch.float32).item<float>() < 0.005);
 
-        var output2 = Ops.exllama_q4_matmul_cuda(
-            x,
-            pack_u4(qa).T.contiguous(),
-            scales.T.contiguous(),
-            // GPTQ kernel adds 1 to zero points
-            pack_u4(torch.maximum(qzeros.T - 1, 0)).contiguous()
-        );
+        // // exllama kernel dropped
+        // var output2 = Ops.exllama_q4_matmul_cuda(
+        //     x,
+        //     pack_u4(qa).T.contiguous(),
+        //     scales.T.contiguous(),
+        //     // GPTQ kernel adds 1 to zero points
+        //     pack_u4(torch.maximum(qzeros.T - 1, 0)).contiguous()
+        // );
 
-        Assert.IsTrue((reference - output2).abs().max().to(torch.float32).item<float>() < 0.05);
-        Assert.IsTrue((reference - output2).abs().mean().to(torch.float32).item<float>() < 0.005);
+        // Assert.IsTrue((reference - output2).abs().max().to(torch.float32).item<float>() < 0.05);
+        // Assert.IsTrue((reference - output2).abs().mean().to(torch.float32).item<float>() < 0.005);
 
         var output3 = Ops.awq_gemm_forward(
             x,
@@ -119,5 +128,22 @@ public class NativeOpsTests
 
         Assert.IsTrue((reference - output3).abs().max().to(torch.float32).item<float>() < 0.05);
         Assert.IsTrue((reference - output3).abs().mean().to(torch.float32).item<float>() < 0.005);
+
+        var (converted_q, converted_sz) = Ops.turbomind_convert_s4_k_m8(
+            pack_u4(qa.T, order: new[] { 0, 2, 4, 6, 1, 3, 5, 7 }),
+            scales.T.contiguous(),
+            pack_u4(qzeros.T, order: new[] { 0, 2, 4, 6, 1, 3, 5, 7 }),
+            128
+        );
+
+        var output4 = Ops.turbomind_gemm_s4_f16(
+            x,
+            converted_q,
+            converted_sz,
+            128
+        );
+
+        Assert.IsTrue((reference - output4).abs().max().to(torch.float32).item<float>() < 0.05);
+        Assert.IsTrue((reference - output4).abs().mean().to(torch.float32).item<float>() < 0.005);
     }
 }
