@@ -1,3 +1,4 @@
+using llm_sharp.LLM.Layers;
 using llm_sharp.LLM.Utils;
 using llm_sharp.NativeOps;
 using TorchSharp;
@@ -26,7 +27,7 @@ public class NativeOpsTests
     }
 
     [TestMethod]
-    public void ExtraOps_ShouldHaveSimilarResults()
+    public void ExtraGemmOps_ShouldHaveSimilarResults()
     {
         Tensor pack_u4(Tensor x, int[]? order = null)
         {
@@ -145,5 +146,23 @@ public class NativeOpsTests
 
         Assert.IsTrue((reference - output4).abs().max().to(torch.float32).item<float>() < 0.05);
         Assert.IsTrue((reference - output4).abs().mean().to(torch.float32).item<float>() < 0.005);
+    }
+
+    [TestMethod]
+    public void ExtraTurbomindOps_RMSNormShouldWork()
+    {
+        var norm = new RMSNorm(new []{ 1024L }, 1e-6, dtype: torch.float16, device: torch.CUDA);
+
+        var x = torch.randn(20, 128, 1024, dtype: torch.float16, device: torch.CUDA) * 10;
+
+        var expected = norm.call(x);
+
+        var actual = Ops.turbomind_rms_norm(
+            x,
+            norm.weight,
+            (float)norm.eps
+        );
+
+        Assert.IsTrue((expected - actual).abs().mean().to(torch.float32).item<float>() < 0.000005);
     }
 }

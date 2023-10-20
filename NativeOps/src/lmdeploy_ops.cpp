@@ -2,9 +2,9 @@
 
 #include "src/turbomind/kernels/gemm_s_f16/format.h"
 #include "src/turbomind/kernels/gemm_s_f16/gemm_s4_f16.h"
+#include "src/turbomind/models/llama/llama_kernels.h"
 
 #include "c10/cuda/CUDAStream.h"
-#include <stdint.h>
 
 
 // input: [n, k]
@@ -85,4 +85,40 @@ turbomind_convert_s4_k_m8(Tensor qweight_dst, Tensor scale_and_zeros_dst, const 
             (uint32_t *)qzeros->data_ptr(),
             m, k, group_size);
     )
+}
+
+EXPORT_API(Tensor)
+turbomind_rms_norm(const Tensor input, const Tensor scale, float eps)
+{
+    torch::Tensor res;
+    CATCH(
+        TORCH_CHECK(input->dtype() == torch::kHalf);
+        TORCH_CHECK(scale->dtype() == torch::kHalf);
+
+        TORCH_CHECK(input->is_contiguous());
+        TORCH_CHECK(scale->is_contiguous());
+
+        TORCH_CHECK(input->dim() == 2);
+        TORCH_CHECK(scale->dim() == 1);
+        
+        int m = input->size(0);
+        int n = input->size(1);
+        TORCH_CHECK(scale->size(0) == n);
+
+        torch::Tensor output = torch::empty(
+            {n, m},
+            torch::TensorOptions()
+                .dtype(torch::kHalf).device(input->device()));
+
+        cudaStream_t st = c10::cuda::getCurrentCUDAStream(input->device().index()).stream();
+
+        turbomind::invokeRootMeanSquareNorm(
+            (half *)output.data_ptr(),
+            (half *)input->data_ptr(),
+            (half *)scale->data_ptr(),
+            eps, m, n, st);
+
+        res = std::move(output);
+    );
+    return ResultTensor(res);
 }

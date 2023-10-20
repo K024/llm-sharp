@@ -1,6 +1,7 @@
 using TorchSharp;
 using TorchSharp.Modules;
 using llm_sharp.LLM.Utils;
+using llm_sharp.NativeOps;
 
 namespace llm_sharp.LLM.Layers;
 
@@ -32,5 +33,24 @@ public class RMSNorm : nn.Module<Tensor, Tensor>
         var h = x.to(torch.float32);
         var norm = h * torch.rsqrt(h.pow(2).mean(new[] { -1L }, keepdim: true) + (float)eps);
         return scope.MoveToOuter(norm.type_as(x) * weight);
+    }
+}
+
+public class FusedRMSNorm : RMSNorm
+{
+    public FusedRMSNorm(
+        long[] normalized_shape,
+        double eps = 1e-5,
+        torch.ScalarType? dtype = null,
+        torch.Device? device = null
+    ) : base(normalized_shape, eps, dtype, device)
+    {
+    }
+
+    public override Tensor forward(Tensor x)
+    {
+        using var scope = torch.NewDisposeScope();
+        var result = Ops.turbomind_rms_norm(x, weight, (float)eps);
+        return scope.MoveToOuter(result);
     }
 }

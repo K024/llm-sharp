@@ -8,19 +8,30 @@ def chat(history: list[tuple[str, str]], question: str, temperature = 1.0, top_p
         "question": question,
         "temperature": temperature,
         "top_p": top_p,
+        "stream": True,
     }
     r = requests.post(
-        "http://127.0.0.1:5000/api/Chat/QuestionAnswering",
+        "http://127.0.0.1:5137/api/Chat/QuestionAnswering",
         json=body,
         stream=True,
     )
-    assert r.status_code == 200, f"Status code: {r.status_code}\n{r.text}"
+    r.raise_for_status()
+    assert "text/event-stream" in r.headers["content-type"]
+    add_line_break = False
     for line in r.iter_lines(decode_unicode=True):
         if line:
-            if line.startswith("data: [DONE]"):
-                break
-            if line.startswith("data: "):
-                yield line[len("data: "):]
+            if line.startswith("data:"):
+                line = line[len("data:"):]
+                if line.startswith(" "):
+                    line = line[1:]
+                if line == "[DONE]":
+                    break
+                if add_line_break:
+                    yield "\n"
+                yield line
+                add_line_break = True
+        else:
+            add_line_break = False
 
 
 # page state

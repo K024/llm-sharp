@@ -135,6 +135,9 @@ class LlamaAwqBuilder : LlamaBuilder
             return base.create_linear(input_size, output_size, hasBias);
         return new AwqLinear(input_size, output_size, hasBias, dtype, device);
     }
+
+    public override torch.nn.Module<Tensor, Tensor> create_ln()
+        => new FusedRMSNorm(new []{ config.hidden_size }, config.layernorm_epsilon, dtype: dtype, device: device);
 }
 
 public class QwenAwq : Qwen

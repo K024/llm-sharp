@@ -59,7 +59,7 @@ def convert_tokenizer(input: Path, output: Path):
     tokenizer_config_json.write_text(json.dumps(tokenizer_config, indent=2))
 
 
-def convert_weights(input: Path, output: Path):
+def convert_weights(input: Path, output: Path, weight_is_awq: bool):
     name_mapping = {
         'transformer.wte.weight': 'word_embedding.weight',
         'transformer.ln_f.weight': 'final_ln.weight',
@@ -90,27 +90,29 @@ def convert_weights(input: Path, output: Path):
         converted = {}
 
         for key, value in weights.items():
-            if key.endswith(".qweight"):
-                # [in_dim // 8, out_dim] => [in_dim, out_dim // 8]
-                value = pack_u4(unpack_u4(value.T).T, pack_order)
+            if not weight_is_awq:
+                if key.endswith(".qweight"):
+                    # [in_dim // 8, out_dim] => [in_dim, out_dim // 8]
+                    value = pack_u4(unpack_u4(value.T).T, pack_order)
 
-            elif key.endswith(".qzeros"):
-                # [in_dim // group_size, out_dim // 8] same shape but plus 1
-                value = pack_u4(unpack_u4(value) + 1, pack_order)
+                elif key.endswith(".qzeros"):
+                    # [in_dim // group_size, out_dim // 8] same shape but plus 1
+                    value = pack_u4(unpack_u4(value) + 1, pack_order)
 
-            elif key.endswith(".g_idx"):
-                continue
-
-            elif key.endswith(".bias") and key not in name_mapping:
-                if torch.allclose(value, torch.zeros_like(value), rtol=0.001):
+                elif key.endswith(".g_idx"):
+                    # ignore g_idx in gptq
                     continue
+
+            if key.endswith(".bias") and key not in name_mapping:
+                if not torch.allclose(value, torch.zeros_like(value), rtol=0.001):
+                    raise RuntimeError(f"Non-zero bias in {key}.")
 
             converted[name_mapping[key]] = value
 
         save_file(converted, output / weight_file.name)
 
 
-def convert(input, output):
+def convert(input, output, weight_is_awq=False):
     input = Path(input)
     output = Path(output)
 
@@ -122,7 +124,7 @@ def convert(input, output):
 
     convert_config(input, output)
     convert_tokenizer(input, output)
-    convert_weights(input, output)
+    convert_weights(input, output, weight_is_awq)
 
 
 if __name__ == "__main__":

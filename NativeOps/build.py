@@ -1,7 +1,7 @@
 import os, sys, json, shutil
 from pathlib import Path
 import torch.utils.cpp_extension as torch_ext
-
+from hack_sources import hack_sources
 
 build_name = "llm_sharp_ops"
 root = Path(__file__).parent
@@ -11,28 +11,33 @@ build_path.mkdir(parents=True, exist_ok=True)
 
 auto_awq = root / "third-party/AutoAWQ/awq_cuda"
 lmdeploy = root / "third-party/lmdeploy"
+turbomind = lmdeploy / "src/turbomind"
 
 sources = [
-    root / "src/nativeops.cpp", 
+    root / "src/nativeops.cpp",
 
     root / "src/autoawq_ops.cpp",
     auto_awq / "quantization/gemm_cuda_gen.cu",
     auto_awq / "quantization/gemv_cuda.cu",
-    auto_awq / "layernorm/layernorm.cu",
-    auto_awq / "position_embedding/pos_encoding_kernels.cu",
-    # auto_awq / "attention/ft_attention.cpp",
-    # auto_awq / "attention/decoder_masked_multihead_attention.cu",
 
     root / "src/lmdeploy_ops.cpp",
-    lmdeploy / "src/turbomind/kernels/gemm_s_f16/format.cu",
-    lmdeploy / "src/turbomind/kernels/gemm_s_f16/gemm_s4_f16.cu",
+    turbomind / "kernels/gemm_s_f16/format.cu",
+    turbomind / "kernels/gemm_s_f16/gemm_s4_f16.cu",
+    turbomind / "models/llama/llama_kernels.cu",
+    turbomind / "models/llama/llama_utils.cu",
+    turbomind / "models/llama/fused_multi_head_attention/llama_flash_attention_kernel.cu",
+    # turbomind / "kernels/decoder_masked_multihead_attention.cu",
+    # turbomind / "kernels/decoder_masked_multihead_attention/decoder_masked_multihead_attention_128.cu",
 ]
 
 extra_cflags = []
 extra_cuda_cflags = []
 extra_ld_flags = []
-extra_include_paths = [str(lmdeploy)]
-
+extra_include_paths = [
+    str(lmdeploy),
+    str(root / "third-party/cutlass/include"),
+    str(root / "third-party/cutlass/examples"),
+]
 
 if "include" in sys.argv:
     print(json.dumps(torch_ext.include_paths(cuda=True), indent=2))
@@ -87,6 +92,7 @@ if torch_ext.IS_WINDOWS:
     extra_cuda_cflags += [
         "-O3", 
         "-std=c++17",
+        "-DUSE_NVTX=ON",
         # "-DENABLE_BF16",
         "-U__CUDA_NO_HALF_OPERATORS__",
         "-U__CUDA_NO_HALF_CONVERSIONS__",
@@ -100,11 +106,12 @@ if torch_ext.IS_WINDOWS:
 
 else:
     extra_cflags += [
-        "-g", "-O3", "-fopenmp", "-lgomp", "-std=c++17", "-DENABLE_BF16"
+        "-g", "-O3", "-fopenmp", "-lgomp", "-std=c++17", # "-DENABLE_BF16"
     ]
     extra_cuda_cflags += [
         "-O3", 
         "-std=c++17",
+        "-DUSE_NVTX=ON",
         # "-DENABLE_BF16",
         "-U__CUDA_NO_HALF_OPERATORS__",
         "-U__CUDA_NO_HALF_CONVERSIONS__",
@@ -121,19 +128,23 @@ else:
         f"-L{p}" for p in torch_ext.library_paths(cuda=True)
     ]
 
-
-torch_ext.load(
-    build_name,
-    sources=[str(s) for s in sources],
-    build_directory=str(build_path),
-    extra_cflags=extra_cflags,
-    extra_cuda_cflags=extra_cuda_cflags,
-    extra_ldflags=extra_ld_flags,
-    extra_include_paths=extra_include_paths,
-    with_cuda=True,
-    is_python_module=False,
-    verbose=True
-)
+# hack some source files
+restore_sources = hack_sources()
+try:
+    torch_ext.load(
+        build_name,
+        sources=[str(s) for s in sources],
+        build_directory=str(build_path),
+        extra_cflags=extra_cflags,
+        extra_cuda_cflags=extra_cuda_cflags,
+        extra_ldflags=extra_ld_flags,
+        extra_include_paths=extra_include_paths,
+        with_cuda=True,
+        is_python_module=False,
+        verbose=True
+    )
+finally:
+    restore_sources()
 
 
 runtimes_path = root / "runtimes"

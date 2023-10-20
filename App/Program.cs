@@ -1,3 +1,4 @@
+using TorchSharp;
 using TupleAsJsonArray;
 using llm_sharp.Services;
 using llm_sharp.LLM.Utils;
@@ -44,8 +45,27 @@ if (string.IsNullOrEmpty(command))
 }
 else if (command == "cli")
 {
-    var llmService = app.Services.GetRequiredService<LLMService>();
-    var llm = llmService.FindModel(null) ?? throw new Exception("No models defined");
+    var model = app.Configuration.GetValue<string>("model");
+    var model_path = app.Configuration.GetValue<string>("path");
+    var dtype = app.Configuration.GetValue("dtype", "float16");
+    var device = app.Configuration.GetValue("device", "cuda");
+
+    LanguageModel llm;
+    if (string.IsNullOrEmpty(model) || string.IsNullOrEmpty(model_path))
+    {
+        var llmService = app.Services.GetRequiredService<LLMService>();
+        llm = llmService.FindModel(null)
+            ?? throw new Exception("No model found. Use --model <model_type> and --path <model_path> to specify a model.");
+    }
+    else
+    {
+        llm = LanguageModel.from_pretrained(
+            model,
+            model_path,
+            Enum.Parse<torch.ScalarType>(dtype, true),
+            torch.device(device)
+        );
+    }
     llm.start_chat_cli();
 }
 else if (command == "test")

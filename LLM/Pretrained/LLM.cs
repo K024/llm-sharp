@@ -171,15 +171,19 @@ public abstract class GenerativeLM<TState> : LanguageModel
                 generated.Add(next_token);
 
                 var decoded = decode_output(generated);
-                if (decoded.Length > generated_str.Length && !decoded.EndsWith("�"))
+                if (!decoded.EndsWith("�") && decoded.Length > generated_str.Length)
+                {
                     yield return decoded[generated_str.Length..];
-                generated_str = decoded;
+                    generated_str = decoded;
+                }
             }
             last_generation_perf = (initial.Count, generated.Count, generation_time);
 
             var final_decoded = decode_output(generated);
             if (final_decoded.Length > generated_str.Length)
+            {
                 yield return final_decoded[generated_str.Length..];
+            }
         }
         finally
         {

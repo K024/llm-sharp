@@ -26,7 +26,7 @@ public record ServerSentEvent
     public async Task WriteToStreamAsync(Stream stream)
     {
         ThrowIfInvalid();
-        var writer = new StreamWriter(stream, Encoding.UTF8)
+        var writer = new StreamWriter(stream, new UTF8Encoding(false))
         {
             NewLine = "\n"
         };

@@ -81,6 +81,9 @@ public class AwqLinear : nn.Module<Tensor, Tensor>
     protected bool is_converted_turbomind = false;
     public void convert_turbomind()
     {
+        if (is_converted_turbomind)
+            return;
+
         var (qw, sz) = Ops.turbomind_convert_s4_k_m8(qweight, scales, qzeros, group_size);
 
         qweight.Dispose();

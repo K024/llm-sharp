@@ -6,7 +6,6 @@
 // #include "../third-party/AutoAWQ/awq_cuda/position_embedding/pos_encoding.h"
 // #include "../third-party/AutoAWQ/awq_cuda/attention/ft_attention.h"
 
-void layernorm_forward_cuda(torch::Tensor _input, torch::Tensor _gamma, torch::Tensor _out, float eps);
 
 torch::Tensor gemm_forward_cuda(torch::Tensor _in_feats, torch::Tensor _kernel,
     torch::Tensor _scaling_factors, torch::Tensor _zeros, int split_k_iters);
@@ -21,25 +20,6 @@ torch::Tensor gemv_forward_cuda(
     torch::Tensor _zeros,
     int group_size);
 
-void rotary_embedding_neox(
-  torch::Tensor& positions,
-  torch::Tensor& query,
-  torch::Tensor& key,
-  int head_size,
-  torch::Tensor& cos_sin_cache);
-
-
-EXPORT_API(Tensor)
-awq_layernorm_forward(const Tensor input, const Tensor gamma, float eps)
-{
-    at::Tensor res = at::Tensor();
-    CATCH(
-        at::Tensor output = torch::empty_like(*input);
-        layernorm_forward_cuda(*input, *gamma, output, eps);
-        res = output;
-    );
-    return ResultTensor(res);
-}
 
 EXPORT_API(Tensor)
 awq_gemm_forward(const Tensor in_feats, const Tensor kernel, const Tensor scaling_factors, const Tensor zeros, int split_k_iters)
@@ -58,19 +38,3 @@ awq_gemv_forward(const Tensor in_feats, const Tensor kernel, const Tensor scalin
 {
     CATCH_TENSOR(gemv_forward_cuda(*in_feats, *kernel, *scaling_factors, *zeros, group_size));
 }
-
-EXPORT_API(void)
-awq_rotary_embedding_neox(const Tensor positions, const Tensor query, const Tensor key, int head_size, const Tensor cos_sin_cache)
-{
-    CATCH({
-        rotary_embedding_neox(*positions, *query, *key, head_size, *cos_sin_cache);
-    });
-}
-
-// EXPORT_API(Tensor)
-// awq_single_query_attention(const Tensor q, const Tensor k, const Tensor v, const Tensor k_cache, const Tensor v_cache,
-//     const Tensor length_per_sample_, const Tensor alibi_slopes_, int timestep, int rotary_embedding_dim, float rotary_base, bool neox_rotary_style)
-// {
-//     CATCH_TENSOR(single_query_attention(*q, *k, *v, *k_cache, *v_cache,
-//         *length_per_sample_, *alibi_slopes_, timestep, rotary_embedding_dim, rotary_base, neox_rotary_style));
-// }
