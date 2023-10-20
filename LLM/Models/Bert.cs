@@ -39,6 +39,9 @@ public record BertConfig
 
     public virtual long type_vocab_size { get; set; } = 4;
     public virtual long max_sequence_length { get; set; } = 2048;
+
+    // "pooler": tanh(dense([CLS]))
+    // "cls", "mean", "max": no extra layers
     public virtual List<string> pooling_mode { get; set; } = new() { BertPooler.POOLER };
     public virtual int classifier_classes { get; set; } = 0;
     public virtual string classifier_mode { get; set; } = BertModel.SEQUENCE;

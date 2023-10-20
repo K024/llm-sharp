@@ -23,13 +23,11 @@ public class LLMService
         public List<string> aliases { get; set; } = new();
         public string type { get; set; } = "";
         public string path { get; set; } = "";
-        public bool use_bfloat16 { get; set; } = true;
-        public bool use_cuda { get; set; } = true;
-        public int device { get; set; } = 0;
+        public string dtype { get; set; } = "float16";
+        public string device { get; set; } = "cuda";
     }
     public class LLMConfig
     {
-        public string default_model { get; set; } = "";
         public List<LLMModelConfig> models { get; set; } = new();
     }
 
@@ -58,7 +56,7 @@ public class LLMService
         lock (models)
         {
             modelByName = new();
-            default_model = config.default_model;
+            default_model = config.models.Count > 0 ? config.models[0].name : "";
             foreach (var model in config.models)
             {
                 if (models.ContainsKey(model.path))
@@ -67,8 +65,8 @@ public class LLMService
                 var model_instance = LanguageModel.from_pretrained(
                     model.type,
                     model.path,
-                    model.use_bfloat16 ? torch.bfloat16 : torch.float16,
-                    model.use_cuda ? torch.device(model.device) : torch.CPU
+                    Enum.Parse<torch.ScalarType>(model.dtype, true),
+                    torch.device(model.device)
                 );
 
                 models.Add(model.path, model_instance);
@@ -91,13 +89,22 @@ public class LLMService
         }
     }
 
-    public LanguageModel? FindModel(string? model)
+    public LanguageModel? FindModel(string? model, bool for_chat = true)
     {
         if (string.IsNullOrWhiteSpace(model))
             model = default_model;
 
         if (modelByName.TryGetValue(model, out var path))
-            return models.GetValueOrDefault(path);
+        {
+            var lm = models.GetValueOrDefault(path);
+            if (lm is null)
+                return null;
+            if (for_chat && !lm.can_chat)
+                return null;
+            if (!for_chat && !lm.can_encode)
+                return null;
+            return lm;
+        }
 
         return null;
     }
@@ -108,7 +115,7 @@ public class LLMService
         string input,
         GenerationConfig? config = null)
     {
-        var llm = FindModel(model);
+        var llm = FindModel(model, for_chat: true);
 
         if (llm is null)
             return null;

@@ -21,15 +21,10 @@ public class ChatController : ControllerBase
     public record QuestionAnsweringParams
     {
         public string model { get; set; } = "";
-        public record HistoryItem
-        {
-            public string question { get; set; } = "";
-            public string answer { get; set; } = "";
-        }
         public bool stream { get; set; } = false;
         [Required]
         public string question { get; set; } = "";
-        public List<HistoryItem> history { get; set; } = new();
+        public List<(string question, string answer)> history { get; set; } = new();
         public double temperature { get; set; } = 1.0;
         public double top_p { get; set; } = 0.8;
     }
