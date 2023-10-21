@@ -231,6 +231,7 @@ public abstract class MaskedLM : LanguageModel
 
     public override IList<float> encode(string text)
     {
+        using var no_grad = torch.no_grad();
         var stop_watch = Stopwatch.StartNew();
         var result = encode_tokens(prepare_input(text));
 

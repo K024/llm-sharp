@@ -138,7 +138,7 @@ public class WordPiece : ITokenizer
                 trie,
                 encoder,
                 config.continuing_prefix,
-                special_token_encoder[config.unk_token]
+                this[config.unk_token]
             ));
         }
         return ret;

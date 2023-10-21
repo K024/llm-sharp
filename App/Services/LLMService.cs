@@ -122,4 +122,14 @@ public class LLMService
 
         return llm.chat_async(history, input, config);
     }
+
+    public Task<IList<float>?> EncodeAsync(string? model, string input)
+    {
+        var llm = FindModel(model, for_chat: false);
+
+        if (llm is null)
+            return Task.FromResult<IList<float>?>(null);
+
+        return llm.encode_async(input)!;
+    }
 }

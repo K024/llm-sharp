@@ -47,7 +47,7 @@ def convert_tokenizer(input: Path, output: Path):
         basic_tokenize=dict(
             do_lower_case=config["do_lower_case"],
             tokenize_chinese_chars=config["tokenize_chinese_chars"],
-            strip_accents=config["strip_accents"],
+            strip_accents=config["strip_accents"] if config["stripe_accents"] is not None else config["do_lower_case"],
         ),
         special_tokens={
             "[PAD]": vocab["[PAD]"],
