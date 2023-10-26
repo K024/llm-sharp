@@ -36,11 +36,12 @@ public class RotaryEmbedding : nn.Module<Tensor, (Tensor cos, Tensor sin)>
     public RotaryEmbedding(
         long num_embeddings,
         long embedding_dims,
+        double theta = 10000.0,
         torch.ScalarType? dtype = null,
         torch.Device? device = null
     ) : base("RotaryEmbedding")
     {
-        (cos, sin) = precompute_freqs_cis(embedding_dims, num_embeddings);
+        (cos, sin) = precompute_freqs_cis(embedding_dims, num_embeddings, theta);
         if (dtype is not null)
             (cos, sin) = (cos.to(dtype.Value), sin.to(dtype.Value));
         if (device is not null)

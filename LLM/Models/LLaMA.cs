@@ -50,6 +50,7 @@ public record LlamaConfig
     public virtual double dropout_rate { get; set; } = 0.0;
     public virtual double layernorm_epsilon { get; set; } = 1e-06;
     public virtual long max_sequence_length { get; set; } = 2048;
+    public virtual double rope_theta { get; set; } = 10000.0;
 }
 
 public class LlamaBuilder : AbstractBuilder
@@ -74,7 +75,7 @@ public class LlamaBuilder : AbstractBuilder
     public virtual ILlamaBlock create_llama_block() => new LlamaBlock(this);
 
     public virtual IRotaryEmbedding create_rotary_embedding()
-        => new RotaryEmbedding(config.max_sequence_length, config.head_hidden_size, dtype: dtype, device: device);
+        => new RotaryEmbedding(config.max_sequence_length, config.head_hidden_size, config.rope_theta, dtype: dtype, device: device);
 }
 
 public class LlamaAttention : ILlamaAttention
