@@ -13,6 +13,12 @@ public static class Ops
     [DllImport("llm_sharp_ops")]
     internal static extern IntPtr llm_sharp_hello(IntPtr handle);
 
+    [DllImport("llm_sharp_ops")]
+    internal static extern IntPtr torch_scaled_dot_product_attention(
+        IntPtr query, IntPtr key, IntPtr value, IntPtr mask,
+        double dropout_p, bool is_causal,
+        bool use_flash, bool use_mem_effecient, bool use_math);
+
     //////////////////////////////////
 
     [DllImport("llm_sharp_ops")]
@@ -23,6 +29,9 @@ public static class Ops
 
     [DllImport("llm_sharp_ops")]
     internal static extern IntPtr awq_gemv_forward(IntPtr in_feats, IntPtr kernel, IntPtr scaling_factors, IntPtr zeros, int group_size);
+
+    [DllImport("llm_sharp_ops")]
+    internal static extern IntPtr awq_rotary_embedding_neox(IntPtr cos, IntPtr sin, IntPtr query, IntPtr key, IntPtr out_query, IntPtr out_key);
 
     //////////////////////////////////
 
@@ -47,6 +56,23 @@ public static class Ops
     public static Tensor hello(this Tensor tensor)
     {
         var result = llm_sharp_hello(tensor.Handle);
+        CheckForErrors();
+        return Tensor.UnsafeCreateTensor(result);
+    }
+
+    public static Tensor torch_scaled_dot_product_attention(
+        Tensor query, Tensor key, Tensor value, Tensor? mask = null,
+        double dropout_p = 0.0, bool is_causal = false,
+        bool use_flash = true, bool use_mem_effecient = true, bool use_math = true)
+    {
+        if (!use_flash && !use_mem_effecient && !use_math)
+            throw new ArgumentException("At least one of use_flash, use_mem_effecient, use_math must be true");
+
+        var result = torch_scaled_dot_product_attention(
+            query.Handle, key.Handle, value.Handle, mask?.Handle ?? IntPtr.Zero,
+            dropout_p, is_causal,
+            use_flash, use_mem_effecient, use_math);
+
         CheckForErrors();
         return Tensor.UnsafeCreateTensor(result);
     }
@@ -95,6 +121,19 @@ public static class Ops
         var result = awq_gemv_forward(reshaped.Handle, kernel.Handle, scaling_factors.Handle, zeros.Handle, group_size);
         CheckForErrors();
         return Tensor.UnsafeCreateTensor(result).reshape(outputShape);
+    }
+
+    /// <param name="cos">[batch, seq, heads, head_dim]</param>
+    /// <param name="sin">[batch, seq, heads, head_dim]</param>
+    /// <param name="query">[batch, seq, (1), rotary_dim * 2]</param>
+    /// <param name="key">[batch, seq, (1), rotary_dim * 2]</param>
+    public static (Tensor query, Tensor key) awq_rotary_embedding_neox(Tensor query, Tensor key, Tensor cos, Tensor sin)
+    {
+        var out_query = torch.empty_like(query);
+        var out_key = torch.empty_like(key);
+        awq_rotary_embedding_neox(cos.Handle, sin.Handle, query.Handle, key.Handle, out_query.Handle, out_key.Handle);
+        CheckForErrors();
+        return (out_query, out_key);
     }
 
     /// <param name="input">[batch, in_dim]</param>

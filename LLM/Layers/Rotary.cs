@@ -1,6 +1,7 @@
 using TorchSharp;
 using TorchSharp.Modules;
 using llm_sharp.LLM.Utils;
+using llm_sharp.NativeOps;
 
 namespace llm_sharp.LLM.Layers;
 
@@ -29,6 +30,9 @@ public class RotaryEmbedding : nn.Module<Tensor, (Tensor cos, Tensor sin)>
         var rotated = torch.cat(new[] { -x_i, x_r }, dim: -1);
         return scope.MoveToOuter(x * freqs_cis.cos + rotated * freqs_cis.sin);
     }
+
+    public static (Tensor query, Tensor key) apply_rotary_emb_fused(Tensor query, Tensor key, (Tensor cos, Tensor sin) freqs_cis)
+        => Ops.awq_rotary_embedding_neox(query, key, freqs_cis.cos, freqs_cis.sin);
 
     public Tensor cos;
     public Tensor sin;
@@ -63,6 +67,7 @@ public class RotaryEmbedding : nn.Module<Tensor, (Tensor cos, Tensor sin)>
     public override Dictionary<string, Tensor> state_dict(Dictionary<string, Tensor>? destination = null, string? prefix = null)
     {
         // omit from state_dict
+        // TODO: not working
         return destination ?? new();
     }
 }

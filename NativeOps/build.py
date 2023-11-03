@@ -17,6 +17,7 @@ sources = [
     root / "src/autoawq_ops.cpp",
     auto_awq / "quantization/gemm_cuda_gen.cu",
     auto_awq / "quantization/gemv_cuda.cu",
+    auto_awq / "position_embedding/pos_encoding_kernels.cu",
 
     root / "src/lmdeploy_ops.cpp",
     lmdeploy / "gemm_s_f16/format.cu",
