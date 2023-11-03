@@ -1,9 +1,0 @@
-[submodule "NativeOps/third-party/AutoAWQ"]
-	path = NativeOps/third-party/AutoAWQ
-	url = https://github.com/casper-hansen/AutoAWQ
-[submodule "NativeOps/third-party/lmdeploy"]
-	path = NativeOps/third-party/lmdeploy
-	url = https://github.com/InternLM/lmdeploy
-[submodule "NativeOps/third-party/cutlass"]
-	path = NativeOps/third-party/cutlass
-	url = https://github.com/NVIDIA/cutlass
