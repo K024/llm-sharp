@@ -63,7 +63,7 @@ public class LlamaBuilder : AbstractBuilder
     public virtual new LlamaConfig config { get => (LlamaConfig)base.config; set => base.config = value; }
 
     public virtual IModule create_ln()
-        => new RMSNorm(new []{ config.hidden_size }, config.layernorm_epsilon, dtype: dtype, device: device);
+        => new RMSNorm(new[] { config.hidden_size }, config.layernorm_epsilon, dtype: dtype, device: device);
 
     public virtual IModule create_dropout() => nn.Dropout(config.dropout_rate);
 
@@ -315,7 +315,7 @@ public class LlamaModel : nn.Module<LlamaModelInput, LlamaModelOutput>
         // stripe to new seq length
         position_ids = position_ids[.., ^(int)n_seq_new..];
         // unsqueeze n_head dim
-        attention_mask = attention_mask[.., TensorIndex.None];
+        attention_mask = attention_mask[.., TensorIndex.None].type_as(input_embeddings);
 
         var freqs_cis = rotary.call(position_ids);
 

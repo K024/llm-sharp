@@ -2,6 +2,8 @@ using TorchSharp;
 using llm_sharp.LLM.Tokenizers;
 using llm_sharp.LLM.Pretrained;
 using llm_sharp.LLM.Layers;
+using llm_sharp.LLM.Utils;
+using llm_sharp.NativeOps;
 
 namespace llm_sharp.LLM.Models;
 
@@ -107,7 +109,7 @@ public class Qwen : GenerativeLM<Qwen.QwenState>
     }
 }
 
-class LlamaAwqBuilder : LlamaBuilder
+class LlamaAwqBuilder : LlamaFastBuilder
 {
     public LlamaAwqBuilder(LlamaConfig config) : base(config) { }
 
@@ -135,9 +137,6 @@ class LlamaAwqBuilder : LlamaBuilder
             return base.create_linear(input_size, output_size, hasBias);
         return new AwqLinear(input_size, output_size, hasBias, dtype, device);
     }
-
-    public override torch.nn.Module<Tensor, Tensor> create_ln()
-        => new FusedRMSNorm(new []{ config.hidden_size }, config.layernorm_epsilon, dtype: dtype, device: device);
 }
 
 public class QwenAwq : Qwen

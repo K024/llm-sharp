@@ -18,7 +18,8 @@ __global__ void rotary_embedding_neox_kernel(
   scalar_t* __restrict__ out_query,
   scalar_t* __restrict__ out_key,
   const int rot_dim,
-  const int stride,
+  const int stride_in,
+  const int stride_out,
   const int num_heads,
   const int head_size) {
   // Each thread block is responsible for one token.
@@ -30,27 +31,25 @@ __global__ void rotary_embedding_neox_kernel(
   const int n = num_heads * embed_dim;
   for (int i = threadIdx.x; i < n; i += blockDim.x) {
     const int head_idx = i / embed_dim;
-    const int token_head = token_idx * stride + head_idx * head_size;
+    const int token_head = token_idx * stride_in + head_idx * head_size;
+    const int out_token_head = token_idx * stride_out + head_idx * head_size;
 
     const int rot_offset = i % embed_dim;
     const int x_index = rot_offset;
     const int y_index = embed_dim + rot_offset;
-
-    const int out_x = token_idx * stride + head_idx * head_size + x_index;
-    const int out_y = token_idx * stride + head_idx * head_size + y_index;
 
     const scalar_t cos = __ldg(cos_ptr + x_index); // redundant at last dim
     const scalar_t sin = __ldg(sin_ptr + x_index); // redundant at last dim
 
     const scalar_t q_x = query[token_head + x_index];
     const scalar_t q_y = query[token_head + y_index];
-    out_query[out_x] = q_x * cos - q_y * sin;
-    out_query[out_y] = q_y * cos + q_x * sin;
+    out_query[out_token_head + x_index] = q_x * cos - q_y * sin;
+    out_query[out_token_head + y_index] = q_y * cos + q_x * sin;
 
     const scalar_t k_x = key[token_head + x_index];
     const scalar_t k_y = key[token_head + y_index];
-    out_key[out_x] = k_x * cos - k_y * sin;
-    out_key[out_y] = k_y * cos + k_x * sin;
+    out_key[out_token_head + x_index] = k_x * cos - k_y * sin;
+    out_key[out_token_head + y_index] = k_y * cos + k_x * sin;
   }
 }
 
@@ -66,12 +65,22 @@ void rotary_embedding_neox(
   int num_tokens = query.size(0) * query.size(1);
   int num_heads = query.size(2);
   int head_size = query.size(3);
-  int stride = num_heads * head_size;
+  int stride_in = query.stride(1);
+  int stride_out = out_query.stride(1);
 
   TORCH_CHECK(cos.size(0) == query.size(0));
   TORCH_CHECK(cos.size(1) == query.size(1));
   TORCH_CHECK(key.size(2) == query.size(2));
   TORCH_CHECK(key.size(3) == query.size(3));
+
+  TORCH_CHECK(cos.is_contiguous());
+  TORCH_CHECK(sin.is_contiguous());
+  TORCH_CHECK(query.stride(3) == 1);
+  TORCH_CHECK(key.stride(3) == 1);
+  TORCH_CHECK(query.stride(2) == head_size);
+  TORCH_CHECK(key.stride(2) == head_size);
+  TORCH_CHECK(out_query.is_contiguous());
+  TORCH_CHECK(out_key.is_contiguous());
 
   dim3 grid(num_tokens);
   dim3 block(std::min(num_heads * rot_dim / 2, 512));
@@ -90,7 +99,8 @@ void rotary_embedding_neox(
         out_query.data_ptr<scalar_t>(),
         out_key.data_ptr<scalar_t>(),
         rot_dim,
-        stride,
+        stride_in,
+        stride_out,
         num_heads,
         head_size);
     });
