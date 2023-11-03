@@ -1,8 +1,8 @@
 #include "utils.hpp"
 
-#include "src/turbomind/kernels/gemm_s_f16/format.h"
-#include "src/turbomind/kernels/gemm_s_f16/gemm_s4_f16.h"
-#include "src/turbomind/models/llama/llama_kernels.h"
+#include "../third-party/lmdeploy/gemm_s_f16/format.h"
+#include "../third-party/lmdeploy/gemm_s_f16/gemm_s4_f16.h"
+#include "../third-party/lmdeploy/llama/llama_kernels.h"
 
 #include "c10/cuda/CUDAStream.h"
 

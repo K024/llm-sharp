@@ -1,24 +1,7 @@
 #include "utils.hpp"
 
-// #include "../third-party/AutoAWQ/awq_cuda/layernorm/layernorm.h"
-// #include "../third-party/AutoAWQ/awq_cuda/quantization/gemm_cuda.h"
-// #include "../third-party/AutoAWQ/awq_cuda/quantization/gemv_cuda.h"
-// #include "../third-party/AutoAWQ/awq_cuda/position_embedding/pos_encoding.h"
-// #include "../third-party/AutoAWQ/awq_cuda/attention/ft_attention.h"
-
-
-torch::Tensor gemm_forward_cuda(torch::Tensor _in_feats, torch::Tensor _kernel,
-    torch::Tensor _scaling_factors, torch::Tensor _zeros, int split_k_iters);
-
-torch::Tensor gemmv2_forward_cuda(torch::Tensor _in_feats, torch::Tensor _kernel,
-    torch::Tensor _scaling_factors, torch::Tensor _zeros, int group_size, int split_k_iters);
-
-torch::Tensor gemv_forward_cuda(
-    torch::Tensor _in_feats,
-    torch::Tensor _kernel,
-    torch::Tensor _scaling_factors,
-    torch::Tensor _zeros,
-    int group_size);
+#include "../third-party/AutoAWQ/quantization/gemm_cuda.h"
+#include "../third-party/AutoAWQ/quantization/gemv_cuda.h"
 
 
 EXPORT_API(Tensor)
