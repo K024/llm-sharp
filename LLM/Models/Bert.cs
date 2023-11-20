@@ -216,7 +216,7 @@ public class BertPooler : IBertPooler
 {
     public IModule dense;
     private readonly List<string> pooling_mode;
-    public Func<Tensor, Tensor> activation;
+    public IModule activation;
 
     public const string POOLER = "pooler";
     public const string CLS = "cls";
@@ -234,7 +234,7 @@ public class BertPooler : IBertPooler
             ? builder.create_linear(builder.config.hidden_size, builder.config.hidden_size)
             : nn.Identity();
 
-        activation = F.tanh;
+        activation = Activations.get_activation_by_name("tanh");
         RegisterComponents();
     }
 
@@ -261,7 +261,7 @@ public class BertPooler : IBertPooler
         {
             var first_word = x[.., 0];
             var pooled = dense.call(first_word);
-            return scope.MoveToOuter(activation(pooled));
+            return scope.MoveToOuter(activation.call(pooled));
         }
 
         if (pooling_mode.Contains(CLS))

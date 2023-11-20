@@ -74,6 +74,34 @@ Command line interface:
 dotnet run --project App /c cli
 ```
 
+## Dev env setup
+
+It's recommended to use conda to manage the build environment for `NativeOps` package. Current TorchSharp depends on `torch==2.1.0` and `cuda==12.1.0`:
+
+```sh
+conda install pytorch=2.1.0 pytorch-cuda=12.1 cuda -c pytorch -c nvidia
+```
+
+This will automatically install required nvcc to build `NativeOps` package. The build pipeline also requires `ninja` python package and an MSVC compiler (which should be setup by installing Visual Studio).
+
+Then you can build the `NativeOps` by:
+
+```sh
+python NativeOps/build.py
+```
+
+This will build the native codes to `NativeOps/runtimes/[rid]/native/llm_sharp_ops.{dll,so}`, and will be automatically recognized by dotnet. For cpp dev, use the following args to print the include dir for the build pipeline:
+
+```sh
+python NativeOps/build.py include
+```
+
+If you already have a built binary, or you don't need the `NativeOps`, you can also install torch by pip or directly download the libs required:
+
+```sh
+pip install -r requirements.txt
+```
+
 ## Performance
 
 Single inference on Linux with single RTX 3090 (Qwen-14B-chat, awq int4):

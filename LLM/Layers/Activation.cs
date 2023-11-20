@@ -11,7 +11,7 @@ using F = torch.nn.functional;
 public static class Activations
 {
     public static nn.Module<Tensor, Tensor> get_activation_by_name(string name) {
-        switch (name) {
+        switch (name.ToLower()) {
             case "relu":
                 return nn.ReLU();
 
