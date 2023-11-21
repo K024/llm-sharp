@@ -64,13 +64,13 @@ public static class LibTorchDownloader
             {
                 await fileStream.WriteAsync(buffer, 0, bytesRead);
                 downloaded += bytesRead;
-                if ((DateTimeOffset.Now - lastPrint).TotalMilliseconds > 20)
+                if ((DateTimeOffset.Now - lastPrint).TotalMilliseconds > 50)
                 {
                     Console.Write($"\rDownloading {HumanSize(downloaded)} of {HumanSize(contentLength)}        ");
                     lastPrint = DateTimeOffset.Now;
                 }
             }
-            Console.WriteLine();
+            Console.WriteLine($"\rDownloading {HumanSize(downloaded)} of {HumanSize(contentLength)}        ");
         }
 
         File.Move(tmpfilename, path, overwrite: true);
@@ -78,7 +78,7 @@ public static class LibTorchDownloader
         ZipFile.ExtractToDirectory(path, cache, overwriteFiles: true);
         File.Delete(path);
 
-        Console.WriteLine($"LibTorch downloaded to {path}");
+        Console.WriteLine($"LibTorch downloaded to {cache}");
     }
 }
 

@@ -46,7 +46,7 @@ public class Baichuan : GenerativeLM<BaichuanState>
         var mask = alibi.mask;
         scope.Include(mask);
 
-        alibi.mask = mask - mask[torch.TensorIndex.None, torch.TensorIndex.None, ..1];
+        alibi.mask = -torch.flip(mask, 2);
         scope.Detach(alibi.mask);
     }
 
@@ -59,6 +59,8 @@ public class Baichuan : GenerativeLM<BaichuanState>
         var (tokenizer, tokenizer_config) = tokenizer_from_pretrained<SentencePieceBPE, SentencePieceBPEConfig>(path);
 
         norm_head((CustomLinear)model.lm_head);
+        if (model.alibi is Alibi alibi)
+            enhance_alibi(alibi);
 
         return new Baichuan()
         {
@@ -135,6 +137,8 @@ public class BaichuanAwq : Baichuan
 
         QwenAwq.convert_turbomind(model);
         norm_head((CustomLinear)model.lm_head);
+        if (model.alibi is Alibi alibi)
+            enhance_alibi(alibi);
 
         return new BaichuanAwq()
         {
