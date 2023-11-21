@@ -3,9 +3,6 @@ using TupleAsJsonArray;
 using llm_sharp.Services;
 using llm_sharp.LLM.Utils;
 using llm_sharp.LLM.Pretrained;
-using System.Text.Json;
-
-LibTorchLoader.EnsureLoaded();
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -38,6 +35,18 @@ app.MapControllers();
 var command =
     app.Configuration.GetValue("command",
         app.Configuration.GetValue<string>("c"));
+
+if (command == "download")
+{
+    LibTorchLoader.DownloadLibTorch(
+        app.Configuration.GetValue<bool>("removeLast"),
+        app.Configuration.GetValue<bool>("skipVerification"),
+        app.Configuration.GetValue<string>("url")
+    );
+    return;
+}
+
+LibTorchLoader.EnsureLoaded();
 
 if (string.IsNullOrEmpty(command))
 {
