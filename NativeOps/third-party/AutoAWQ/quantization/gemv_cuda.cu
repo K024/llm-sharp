@@ -225,7 +225,7 @@ torch::Tensor gemv_forward_cuda(
     int blockDim_z = num_out_feats;
     dim3 num_blocks(1, num_out_channels / 4, num_out_feats);
     dim3 num_threads(32, 4);
-    const cudaStream_t stream = at::cuda::getCurrentCUDAStream();
+    cudaStream_t stream = c10::cuda::getCurrentCUDAStream(_in_feats.device().index()).stream();
     if (group_size == 64)
     {
       gemv_kernel_g64<<<num_blocks, num_threads, 0, stream>>>(

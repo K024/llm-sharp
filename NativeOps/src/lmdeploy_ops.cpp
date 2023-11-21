@@ -76,6 +76,8 @@ turbomind_convert_s4_k_m8(Tensor qweight_dst, Tensor scale_and_zeros_dst, const 
 
         torch::Tensor workspace = torch::zeros_like(*scales);
 
+        cudaStream_t st = c10::cuda::getCurrentCUDAStream(qweight->device().index()).stream();
+
         turbomind::convert_s4_k_m8(
             (uint32_t *)qweight_dst->data_ptr(),
             (half2 *)scale_and_zeros_dst->data_ptr(),
@@ -83,7 +85,7 @@ turbomind_convert_s4_k_m8(Tensor qweight_dst, Tensor scale_and_zeros_dst, const 
             (uint32_t *)qweight->data_ptr(),
             (half *)scales->data_ptr(),
             (uint32_t *)qzeros->data_ptr(),
-            m, k, group_size);
+            m, k, group_size, st);
     )
 }
 

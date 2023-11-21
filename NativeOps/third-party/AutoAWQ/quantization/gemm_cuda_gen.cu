@@ -753,6 +753,7 @@ torch::Tensor gemmv2_forward_cuda(
     auto out_feats = reinterpret_cast<half*>(_out_feats.data_ptr<at::Half>());
     auto scaling_factors = reinterpret_cast<half*>(_scaling_factors.data_ptr<at::Half>());
     auto zeros = reinterpret_cast<int*>(_zeros.data_ptr<int>());
+    cudaStream_t stream = c10::cuda::getCurrentCUDAStream(_in_feats.device().index()).stream();
 
     // blockIdx_x: i_factors[0] * j_factors[0]
     // blockIdx_y: i_factors[1] * j_factors[1]
@@ -769,12 +770,12 @@ torch::Tensor gemmv2_forward_cuda(
     dim3 threads_per_block(32, 4);
     if (group_size == 128)
     {
-      gemmv2_forward_4bit_cuda_m128n64k32<128><<<num_blocks, threads_per_block>>>(
+      gemmv2_forward_4bit_cuda_m128n64k32<128><<<num_blocks, threads_per_block, 0, stream>>>(
         split_k_iters, in_feats, kernel, scaling_factors, zeros, num_in_feats, num_in_channels, num_out_channels, out_feats);
     }
     else if (group_size == 64)
     {
-      gemmv2_forward_4bit_cuda_m128n64k32<64><<<num_blocks, threads_per_block>>>(
+      gemmv2_forward_4bit_cuda_m128n64k32<64><<<num_blocks, threads_per_block, 0, stream>>>(
         split_k_iters, in_feats, kernel, scaling_factors, zeros, num_in_feats, num_in_channels, num_out_channels, out_feats);
     }
     else
@@ -812,7 +813,7 @@ torch::Tensor gemm_forward_cuda(
     auto scaling_factors = reinterpret_cast<half*>(_scaling_factors.data_ptr<at::Half>());
     auto zeros = reinterpret_cast<int*>(_zeros.data_ptr<int>());
     int group_size = num_in_channels / _scaling_factors.size(0);
-    const cudaStream_t stream = at::cuda::getCurrentCUDAStream();
+    cudaStream_t stream = c10::cuda::getCurrentCUDAStream(_in_feats.device().index()).stream();
 
     if (num_out_channels % 64 != 0)
         throw std::invalid_argument("OC is not multiple of cta_N = 64");
