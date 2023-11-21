@@ -10,11 +10,14 @@ public record SentencePieceBPEConfig
     public Dictionary<string, int> vocab { get; set; } = new();
     public List<string> merges { get; set; } = new();
     public Dictionary<string, int> special_tokens { get; set; } = new();
+    public bool add_dummy_prefix { get; set; } = true;
+    public bool remove_extra_whitespaces { get; set; } = true;
 }
 
 public class SentencePieceBPE : BPE
 {
     // SentencePieceBPE works directly on unicode characters
+    public new SentencePieceBPEConfig config;
     public SentencePieceBPE(SentencePieceBPEConfig config)
         : base(new()
         {
@@ -33,6 +36,7 @@ public class SentencePieceBPE : BPE
             byte_encoder[(byte)b] = token;
             byte_decoder[token] = (byte)b;
         }
+        this.config = config;
     }
 
     protected new Dictionary<byte, int> byte_encoder = new();
@@ -40,12 +44,15 @@ public class SentencePieceBPE : BPE
 
     public override List<int> encode_ordinary_text(string text)
     {
-        text = text.Trim();
+        if (config.remove_extra_whitespaces)
+            text = text.Trim();
         if (string.IsNullOrEmpty(text))
             return new();
 
-        // prepend space and replace all spaces to '▁'
-        var piece = (" " + text).Replace(' ', '▁');
+        if (config.add_dummy_prefix)
+            text = " " + text;
+        // replace all spaces to '▁'
+        var piece = text.Replace(' ', '▁');
 
         // split by runes when working with sentencepiece
         var merged = byte_pair_merge(

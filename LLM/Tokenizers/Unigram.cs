@@ -14,6 +14,8 @@ public record UnigramConfig
     public List<(string, double)> vocab { get; set; } = new();
     public Dictionary<string, int> special_tokens { get; set; } = new();
     public string? precompiled_charsmap { get; set; }
+    public bool add_dummy_prefix { get; set; } = true;
+    public bool remove_extra_whitespaces { get; set; } = true;
 }
 
 public class Unigram : ITokenizer
@@ -146,15 +148,18 @@ public class Unigram : ITokenizer
 
     public virtual List<int> encode_ordinary_text(string text)
     {
-        text = text.Trim();
+        if (config.remove_extra_whitespaces)
+            text = text.Trim();
         if (string.IsNullOrEmpty(text))
             return new();
 
         if (normalizer is not null)
             text = normalizer.normalize(text);
 
-        // prepend space and replace all spaces to '▁'
-        var piece = (" " + text).Replace(' ', '▁');
+        if (config.add_dummy_prefix)
+            text = " " + text;
+        // replace all spaces to '▁'
+        var piece = text.Replace(' ', '▁');
 
         var tokenized = unigram_viterbi(piece, log_probs, trie, min_log_prob);
 

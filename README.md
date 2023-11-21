@@ -14,11 +14,12 @@ C#:
   - [x] Load safetensors in C#
   - [ ] Convert scripts
     - [x] GPTQ & Awq convert scripts
-  - [ ] streamlit web ui for api service
+  - [x] streamlit web ui for api service
 - Introduce more models
   - [ ] Llama2 family
     - [ ] Llama2
     - [x] Qwen tested
+    - [x] Baichuan2 with alibi tested
   - [x] Bert family
     - [x] SentenceTransformer tested
 - Introduce more tokenizers

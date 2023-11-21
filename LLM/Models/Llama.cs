@@ -16,14 +16,14 @@ using IModule = torch.nn.Module<torch.Tensor, torch.Tensor>;
 /// input, rotary_embedding, attention_mask, (k_cache, v_cache) => output, (k_cache, v_cache)
 using ILlamaAttention = torch.nn.Module<
     torch.Tensor, // x
-    (torch.Tensor cos, torch.Tensor sin),
+    (torch.Tensor cos, torch.Tensor sin)?,
     torch.Tensor?, // attention mask
     (torch.Tensor k_cache, torch.Tensor v_cache)?,
     (torch.Tensor h, (torch.Tensor k_cache, torch.Tensor v_cache) kv_cache)
 >;
 using ILlamaBlock = torch.nn.Module<
     torch.Tensor, // x
-    (torch.Tensor cos, torch.Tensor sin),
+    (torch.Tensor cos, torch.Tensor sin)?,
     torch.Tensor?, // attention mask
     (torch.Tensor k_cache, torch.Tensor v_cache)?,
     (torch.Tensor h, (torch.Tensor k_cache, torch.Tensor v_cache) kv_cache)
@@ -31,6 +31,9 @@ using ILlamaBlock = torch.nn.Module<
 
 /// position_ids => (cos, sin)
 using IRotaryEmbedding = torch.nn.Module<torch.Tensor, (torch.Tensor cos, torch.Tensor sin)>;
+
+/// q_seq_len, kv_seq_len => mask
+using IAlibi = torch.nn.Module<long, long, torch.Tensor>;
 
 public record LlamaConfig
 {
@@ -51,6 +54,7 @@ public record LlamaConfig
     public virtual double layernorm_epsilon { get; set; } = 1e-06;
     public virtual long max_sequence_length { get; set; } = 2048;
     public virtual double rope_theta { get; set; } = 10000.0;
+    public virtual bool use_alibi { get; set; } = false;
 }
 
 public class LlamaBuilder : AbstractBuilder
@@ -76,6 +80,9 @@ public class LlamaBuilder : AbstractBuilder
 
     public virtual IRotaryEmbedding create_rotary_embedding()
         => new RotaryEmbedding(config.max_sequence_length, config.head_hidden_size, config.rope_theta, dtype: dtype, device: device);
+
+    public virtual IAlibi create_alibi()
+        => new Alibi(config.num_attention_heads, config.max_sequence_length, dtype: dtype, device: device);
 }
 
 public class LlamaAttention : ILlamaAttention
@@ -116,7 +123,7 @@ public class LlamaAttention : ILlamaAttention
 
     public override (Tensor h, (Tensor k_cache, Tensor v_cache) kv_cache) forward(
         Tensor x,
-        (Tensor cos, Tensor sin) freqs_cis,
+        (Tensor cos, Tensor sin)? freqs_cis,
         Tensor? attention_mask,
         (Tensor k_cache, Tensor v_cache)? kv_cache)
     {
@@ -131,8 +138,11 @@ public class LlamaAttention : ILlamaAttention
         k = k.view(n_batch, n_seq, n_kv_head, d_head);
         v = v.view(n_batch, n_seq, n_kv_head, d_head);
 
-        q = RotaryEmbedding.apply_rotary_emb(q, freqs_cis);
-        k = RotaryEmbedding.apply_rotary_emb(k, freqs_cis);
+        if (freqs_cis is not null)
+        {
+            q = RotaryEmbedding.apply_rotary_emb(q, freqs_cis.Value);
+            k = RotaryEmbedding.apply_rotary_emb(k, freqs_cis.Value);
+        }
 
         if (kv_cache is not null)
         {
@@ -194,7 +204,7 @@ public class LlamaBlock : ILlamaBlock
 
     public override (Tensor h, (Tensor k_cache, Tensor v_cache) kv_cache) forward(
         Tensor x,
-        (Tensor cos, Tensor sin) freqs_cis,
+        (Tensor cos, Tensor sin)? freqs_cis,
         Tensor? attention_mask,
         (Tensor k_cache, Tensor v_cache)? kv_cache)
     {
@@ -243,7 +253,8 @@ public class LlamaModel : nn.Module<LlamaModelInput, LlamaModelOutput>
     public ModuleList<ILlamaBlock> layers;
     public IModule final_ln;
     public IModule lm_head;
-    public IRotaryEmbedding rotary;
+    public IRotaryEmbedding? rotary;
+    public IAlibi? alibi;
 
     public LlamaModel(LlamaBuilder builder) : base("LlamaModel")
     {
@@ -255,7 +266,11 @@ public class LlamaModel : nn.Module<LlamaModelInput, LlamaModelOutput>
                 .Select(index => builder.create_llama_block()).ToArray());
         final_ln = builder.create_ln();
         lm_head = builder.create_linear(config.hidden_size, config.vocab_size, hasBias: false);
-        rotary = builder.create_rotary_embedding();
+
+        if (!config.use_alibi)
+            rotary = builder.create_rotary_embedding();
+        else
+            alibi = builder.create_alibi();
 
         RegisterComponents();
     }
@@ -263,7 +278,7 @@ public class LlamaModel : nn.Module<LlamaModelInput, LlamaModelOutput>
     public (
         Tensor input_embeddings,
         Tensor attention_mask,
-        (Tensor cos, Tensor sin) freqs_cis
+        (Tensor cos, Tensor sin)? freqs_cis
     ) prepare_input(LlamaModelInput input)
     {
         using var scope = torch.NewDisposeScope();
@@ -317,15 +332,23 @@ public class LlamaModel : nn.Module<LlamaModelInput, LlamaModelOutput>
         // unsqueeze n_head dim
         attention_mask = attention_mask[.., TensorIndex.None].type_as(input_embeddings);
 
-        var freqs_cis = rotary.call(position_ids);
+        (Tensor cos, Tensor sin)? freqs_cis = null;
+        if (rotary is not null)
+        {
+            freqs_cis = rotary.call(position_ids);
+            scope.MoveToOuter(freqs_cis.Value.cos, freqs_cis.Value.sin);
+        }
+        else if (alibi is not null)
+        {
+            // alibi attention bias
+            var alibi_bias = alibi.call(n_seq_new, n_seq);
+            attention_mask = attention_mask + alibi_bias;
+        }
 
         return (
             scope.MoveToOuter(input_embeddings),
             scope.MoveToOuter(attention_mask),
-            (
-                scope.MoveToOuter(freqs_cis.cos),
-                scope.MoveToOuter(freqs_cis.sin)
-            )
+            freqs_cis
         );
     }
 

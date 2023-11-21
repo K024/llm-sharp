@@ -7,46 +7,60 @@ using llm_sharp.NativeOps;
 
 namespace llm_sharp.LLM.Models;
 
+using nn = torch.nn;
 using Tensor = torch.Tensor;
+using BaichuanState = Qwen.QwenState;
 
-public class Qwen : GenerativeLM<Qwen.QwenState>
+public class Baichuan : GenerativeLM<BaichuanState>
 {
-    public class QwenState : IDisposable
-    {
-        public List<(Tensor k_cache, Tensor v_cache)> past_key_values { get; set; } = new();
-
-        public void Dispose()
-        {
-            past_key_values.SelectMany(x => new[] { x.k_cache, x.v_cache })
-                .ToList().ForEach(x => x.Dispose());
-        }
-    }
-
     public torch.Device? device { get; protected set; }
     public LlamaModel model { get; init; }
     public LlamaConfig model_config { get; init; }
-    public TikToken tokenizer { get; init; }
-    public TikTokenConfig tokenizer_config { get; init; }
+    public SentencePieceBPE tokenizer { get; init; }
+    public SentencePieceBPEConfig tokenizer_config { get; init; }
 
 #nullable disable
-    protected Qwen() { }
+    protected Baichuan() { }
 #nullable restore
 
-    public virtual Qwen to(torch.Device? device)
+    public virtual Baichuan to(torch.Device? device)
     {
         model.to(device);
         this.device = device;
         return this;
     }
 
-    public static Qwen from_pretrained(
+    public static void norm_head(CustomLinear lm_head)
+    {
+        using var scope = torch.NewDisposeScope();
+        var weight = lm_head.weight;
+        scope.Include(weight);
+
+        lm_head.weight = nn.Parameter(weight * (weight.pow(2).sum(dim: 1, keepdim: true) + 1e-7).rsqrt());
+        scope.Detach(lm_head.weight);
+    }
+
+    public static void enhance_alibi(Alibi alibi)
+    {
+        using var scope = torch.NewDisposeScope();
+        var mask = alibi.mask;
+        scope.Include(mask);
+
+        alibi.mask = mask - mask[torch.TensorIndex.None, torch.TensorIndex.None, ..1];
+        scope.Detach(alibi.mask);
+    }
+
+    public static Baichuan from_pretrained(
         string path,
         torch.ScalarType? dtype = null,
         torch.Device? device = null)
     {
         var (model, model_config) = model_from_pretrained<LlamaModel, LlamaConfig, LlamaBuilder>(path, dtype, device);
-        var (tokenizer, tokenizer_config) = tokenizer_from_pretrained<TikToken, TikTokenConfig>(path);
-        return new Qwen()
+        var (tokenizer, tokenizer_config) = tokenizer_from_pretrained<SentencePieceBPE, SentencePieceBPEConfig>(path);
+
+        norm_head((CustomLinear)model.lm_head);
+
+        return new Baichuan()
         {
             device = device,
             model = model,
@@ -58,18 +72,18 @@ public class Qwen : GenerativeLM<Qwen.QwenState>
 
     protected override List<int> prepare_input(List<(string query, string answer)> history, string input)
     {
-        var prompt = "<|im_start|>system\nYou are a helpful assistant.<|im_end|>";
+        var prompt = "";
 
         foreach (var (query, answer) in history)
         {
-            prompt += $"\n<|im_start|>user\n{query}<|im_end|>\n<|im_start|>assistant\n{answer}<|im_end|>";
+            prompt += $"<reserved_106>{query}<reserved_107>{answer}";
         }
-        prompt += $"\n<|im_start|>user\n{input}<|im_end|>\n<|im_start|>assistant\n";
+        prompt += $"<reserved_106>{input}<reserved_107>";
 
         return tokenizer.encode_text(prompt);
     }
 
-    protected override (int next_token, QwenState? state) generate_step(List<int> tokens, QwenState? state, GenerationConfig config)
+    protected override (int next_token, BaichuanState? state) generate_step(List<int> tokens, BaichuanState? state, GenerationConfig config)
     {
         using var scope = torch.NewDisposeScope();
 
@@ -109,59 +123,20 @@ public class Qwen : GenerativeLM<Qwen.QwenState>
     }
 }
 
-class LlamaAwqBuilder : LlamaFastBuilder
+public class BaichuanAwq : Baichuan
 {
-    public LlamaAwqBuilder(LlamaConfig config) : base(config) { }
-
-    private bool creating_block = false;
-
-    public override
-        torch.nn.Module<Tensor, (Tensor cos, Tensor sin)?, Tensor?, (Tensor k_cache, Tensor v_cache)?,
-            (Tensor h, (Tensor k_cache, Tensor v_cache) kv_cache)>
-        create_llama_block()
-    {
-        try
-        {
-            creating_block = true;
-            return base.create_llama_block();
-        }
-        finally
-        {
-            creating_block = false;
-        }
-    }
-
-    public override torch.nn.Module<Tensor, Tensor> create_linear(long input_size, long output_size, bool hasBias = true)
-    {
-        if (!creating_block)
-            return base.create_linear(input_size, output_size, hasBias);
-        return new AwqLinear(input_size, output_size, hasBias, dtype, device);
-    }
-}
-
-public class QwenAwq : Qwen
-{
-    public static void convert_turbomind(torch.nn.Module module)
-    {
-        Console.WriteLine("Converting to TurboMind format...");
-        foreach (var submodule in module.modules())
-        {
-            if (submodule is AwqLinear awq)
-                awq.convert_turbomind();
-        }
-    }
-
-    public static new Qwen from_pretrained(
+    public static new Baichuan from_pretrained(
         string path,
         torch.ScalarType? dtype = null,
         torch.Device? device = null)
     {
         var (model, model_config) = model_from_pretrained<LlamaModel, LlamaConfig, LlamaAwqBuilder>(path, dtype, device);
-        var (tokenizer, tokenizer_config) = tokenizer_from_pretrained<TikToken, TikTokenConfig>(path);
+        var (tokenizer, tokenizer_config) = tokenizer_from_pretrained<SentencePieceBPE, SentencePieceBPEConfig>(path);
 
-        convert_turbomind(model);
+        QwenAwq.convert_turbomind(model);
+        norm_head((CustomLinear)model.lm_head);
 
-        return new QwenAwq()
+        return new BaichuanAwq()
         {
             device = device,
             model = model,

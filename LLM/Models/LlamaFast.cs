@@ -17,7 +17,7 @@ public class FusedLlamaAttention : LlamaAttention
 
     public override (Tensor h, (Tensor k_cache, Tensor v_cache) kv_cache) forward(
         Tensor x,
-        (Tensor cos, Tensor sin) freqs_cis,
+        (Tensor cos, Tensor sin)? freqs_cis,
         Tensor? attention_mask,
         (Tensor k_cache, Tensor v_cache)? kv_cache)
     {
@@ -32,7 +32,8 @@ public class FusedLlamaAttention : LlamaAttention
         k = k.view(n_batch, n_seq, n_kv_head, d_head);
         v = v.view(n_batch, n_seq, n_kv_head, d_head);
 
-        (q, k) = RotaryEmbedding.apply_rotary_emb_fused(q, k, freqs_cis);
+        if (freqs_cis is not null)
+            (q, k) = RotaryEmbedding.apply_rotary_emb_fused(q, k, freqs_cis.Value);
 
         if (kv_cache is not null)
         {
@@ -75,7 +76,7 @@ class LlamaFastBuilder : LlamaBuilder
     public LlamaFastBuilder(LlamaConfig config) : base(config) { }
 
     public override torch.nn.Module<
-        Tensor, (Tensor cos, Tensor sin), Tensor?, (Tensor k_cache, Tensor v_cache)?,
+        Tensor, (Tensor cos, Tensor sin)?, Tensor?, (Tensor k_cache, Tensor v_cache)?,
         (Tensor h, (Tensor k_cache, Tensor v_cache) kv_cache)>
         create_llama_attention()
         => new FusedLlamaAttention(this);
