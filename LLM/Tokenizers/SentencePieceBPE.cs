@@ -1,6 +1,7 @@
 using System.Collections;
 using System.Text;
 using System.Text.RegularExpressions;
+using ICSharpCode.SharpZipLib.Zip;
 
 namespace llm_sharp.LLM.Tokenizers;
 
@@ -49,7 +50,7 @@ public class SentencePieceBPE : BPE
         if (string.IsNullOrEmpty(text))
             return new();
 
-        if (config.add_dummy_prefix)
+        if (config.add_dummy_prefix && !text.StartsWith(" "))
             text = " " + text;
         // replace all spaces to '▁'
         var piece = text.Replace(' ', '▁');

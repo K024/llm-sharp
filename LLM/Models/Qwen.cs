@@ -1,27 +1,14 @@
 using TorchSharp;
 using llm_sharp.LLM.Tokenizers;
 using llm_sharp.LLM.Pretrained;
-using llm_sharp.LLM.Layers;
-using llm_sharp.LLM.Utils;
-using llm_sharp.NativeOps;
 
 namespace llm_sharp.LLM.Models;
 
 using Tensor = torch.Tensor;
+using QwenState = Llama.LlamaState;
 
-public class Qwen : GenerativeLM<Qwen.QwenState>
+public class Qwen : GenerativeLM<QwenState>
 {
-    public class QwenState : IDisposable
-    {
-        public List<(Tensor k_cache, Tensor v_cache)> past_key_values { get; set; } = new();
-
-        public void Dispose()
-        {
-            past_key_values.SelectMany(x => new[] { x.k_cache, x.v_cache })
-                .ToList().ForEach(x => x.Dispose());
-        }
-    }
-
     public torch.Device? device { get; protected set; }
     public LlamaModel model { get; init; }
     public LlamaConfig model_config { get; init; }
@@ -109,48 +96,8 @@ public class Qwen : GenerativeLM<Qwen.QwenState>
     }
 }
 
-class LlamaAwqBuilder : LlamaFastBuilder
-{
-    public LlamaAwqBuilder(LlamaConfig config) : base(config) { }
-
-    private bool creating_block = false;
-
-    public override
-        torch.nn.Module<Tensor, (Tensor cos, Tensor sin)?, Tensor?, (Tensor k_cache, Tensor v_cache)?,
-            (Tensor h, (Tensor k_cache, Tensor v_cache) kv_cache)>
-        create_llama_block()
-    {
-        try
-        {
-            creating_block = true;
-            return base.create_llama_block();
-        }
-        finally
-        {
-            creating_block = false;
-        }
-    }
-
-    public override torch.nn.Module<Tensor, Tensor> create_linear(long input_size, long output_size, bool hasBias = true)
-    {
-        if (!creating_block)
-            return base.create_linear(input_size, output_size, hasBias);
-        return new AwqLinear(input_size, output_size, hasBias, dtype, device);
-    }
-}
-
 public class QwenAwq : Qwen
 {
-    public static void convert_turbomind(torch.nn.Module module)
-    {
-        Console.WriteLine("Converting to TurboMind format...");
-        foreach (var submodule in module.modules())
-        {
-            if (submodule is AwqLinear awq)
-                awq.convert_turbomind();
-        }
-    }
-
     public static new Qwen from_pretrained(
         string path,
         torch.ScalarType? dtype = null,
@@ -159,7 +106,7 @@ public class QwenAwq : Qwen
         var (model, model_config) = model_from_pretrained<LlamaModel, LlamaConfig, LlamaAwqBuilder>(path, dtype, device);
         var (tokenizer, tokenizer_config) = tokenizer_from_pretrained<TikToken, TikTokenConfig>(path);
 
-        convert_turbomind(model);
+        LlamaAwq.convert_turbomind(model);
 
         return new QwenAwq()
         {

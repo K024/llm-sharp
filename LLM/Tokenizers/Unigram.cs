@@ -156,7 +156,7 @@ public class Unigram : ITokenizer
         if (normalizer is not null)
             text = normalizer.normalize(text);
 
-        if (config.add_dummy_prefix)
+        if (config.add_dummy_prefix && !text.StartsWith(" "))
             text = " " + text;
         // replace all spaces to '▁'
         var piece = text.Replace(' ', '▁');

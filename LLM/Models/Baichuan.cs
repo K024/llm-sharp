@@ -2,14 +2,12 @@ using TorchSharp;
 using llm_sharp.LLM.Tokenizers;
 using llm_sharp.LLM.Pretrained;
 using llm_sharp.LLM.Layers;
-using llm_sharp.LLM.Utils;
-using llm_sharp.NativeOps;
 
 namespace llm_sharp.LLM.Models;
 
 using nn = torch.nn;
 using Tensor = torch.Tensor;
-using BaichuanState = Qwen.QwenState;
+using BaichuanState = Llama.LlamaState;
 
 public class Baichuan : GenerativeLM<BaichuanState>
 {
@@ -135,7 +133,7 @@ public class BaichuanAwq : Baichuan
         var (model, model_config) = model_from_pretrained<LlamaModel, LlamaConfig, LlamaAwqBuilder>(path, dtype, device);
         var (tokenizer, tokenizer_config) = tokenizer_from_pretrained<SentencePieceBPE, SentencePieceBPEConfig>(path);
 
-        QwenAwq.convert_turbomind(model);
+        LlamaAwq.convert_turbomind(model);
         norm_head((CustomLinear)model.lm_head);
         if (model.alibi is Alibi alibi)
             enhance_alibi(alibi);
