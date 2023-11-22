@@ -52,6 +52,8 @@ Get a release from [Releases](https://github.com/K024/llm-sharp/releases).
 
 Run `llm-sharp test` to verify libtorch is correctly loaded. If you start from scratch, use `llm-sharp download` to download required version of libtorch. This will default download to `~/.cache/llm-sharp`. You can also install a required version of PyTorch using pip or conda. The libtorch lookup order is: `env LIBTORCH_PATH > ~/.cache/llm-sharp > python site-packages > os fallback`
 
+Convert your models using scripts in [python-scripts](./python-scripts/). This will convert the original model and tokenizer to `model_config.json`, `tokenizer_config.json` and `*.safetensors`. Sentencepiece tokenizers should be converted to huggingface fast tokenizer format first.
+
 Modify `appsettings.json` in `App` project or add an environment aware config `appsettings.[Development|Production].json`with:
 ```json
 {
