@@ -40,12 +40,15 @@ if (new[] { "help", "h" }.SelectMany(h => new[] { "", "--", "-", "/" }.Select(p 
         .Where(type => type.IsClass && !type.IsAbstract && type.IsSubclassOf(typeof(LanguageModel)))
         .Select(type => type.Name).ToList();
 
+    var torchVersion = LibTorchDownloader.humanVersion;
+
     Console.WriteLine(@$"llm-sharp: run and serve LLMs in C# https://github.com/K024/llm-sharp
 
 Usage: llm-sharp [/option|--option value] ...
     Start a server serving all models defined in appsettings.json >> llm > models.
     All arguments can be set through cli args / config file / env variables.
     For more details, see https://learn.microsoft.com/en-us/aspnet/core/fundamentals/configuration/
+    Required libtorch: {torchVersion}
 
 Special commands:
     llm-sharp [/c|/command] <command>
@@ -58,7 +61,7 @@ Available commands:
         Run a cli chatbot. If no model is specified, will load the first model in appsettings.json >> llm > models.
 
     test
-        Run torch tests. Will hint the location where libtorch loaded.
+        Run libtorch tests. Will hint the location where libtorch loaded.
 
 Available model types:
     {string.Join(", ", modelTypes)}

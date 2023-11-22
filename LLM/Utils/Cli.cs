@@ -7,6 +7,8 @@ public static class CliExtensions
 {
     public static void run_torch_test()
     {
+        Console.WriteLine($"TorchSharp version: {torch.__version__}");
+        Console.WriteLine($"Required libtorch: {LibTorchDownloader.humanVersion}");
         LibTorchLoader.EnsureLoaded();
         Console.WriteLine($"Loaded libtorch from '{LibTorchLoader.LoadedPath}'");
         Console.WriteLine($"Cuda is available: {torch.cuda_is_available()}");
@@ -16,6 +18,19 @@ public static class CliExtensions
         {
             torch.ones(3, 4).cuda().matmul(torch.ones(4, 5).cuda());
             Console.WriteLine($"Cuda test passed");
+            try
+            {
+                NativeOps.Ops.hello(torch.tensor(0f));
+                Console.WriteLine($"Native ops test passed");
+            }
+            catch (Exception)
+            {
+                Console.WriteLine($"Native ops test failed");
+            }
+        }
+        else
+        {
+            Console.WriteLine($"Cuda test & native ops skipped");
         }
     }
 

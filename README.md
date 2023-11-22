@@ -17,7 +17,7 @@ C#:
   - [x] streamlit web ui for api service
 - Introduce more models
   - [ ] Llama2 family
-    - [ ] Llama2
+    - [x] Llama2 (7b awq tested)
     - [x] Qwen tested
     - [x] Baichuan2 with alibi tested
   - [x] Bert family
@@ -48,31 +48,32 @@ Native cpp:
 
 ## Usage
 
-Modify `appsettings.json` in `App` project or add an environment aware config with:
+Get a release from [Releases](https://github.com/K024/llm-sharp/releases).
+
+Run `llm-sharp test` to verify libtorch is correctly loaded. If you start from scratch, use `llm-sharp download` to download required version of libtorch. This will default download to `~/.cache/llm-sharp`. You can also install a required version of PyTorch using pip or conda. The libtorch lookup order is: `env LIBTORCH_PATH > ~/.cache/llm-sharp > python site-packages > os fallback`
+
+Modify `appsettings.json` in `App` project or add an environment aware config `appsettings.[Development|Production].json`with:
 ```json
 {
   "llm": {
     "models": [
       {
-        "name": "qwen-14b-chat",
-        "type": "QwenAwq",
-        "path": "path/to/qwen-14b-chat-awq-int4",
-        "device": "cuda:0",
-        "dtype": "float16"
+        "name": "llama2-7b-chat",
+        "type": "LlamaAwq",
+        "path": "path/to/llama2-7b-chat-awq",
+        "dtype": "float16",
+        "device": "cuda:0"
       }
     ]
   }
 }
 ```
 
-Http api service (visit `http://localhost:5137/swagger/index.html` for api docs):
-```
-dotnet run --project App
-```
+Default will start an http api service (visit `http://localhost:5137/swagger/index.html` for api docs).
 
-Command line interface:
+For command line interface:
 ```
-dotnet run --project App /c cli
+llm-sharp cli
 ```
 
 ## Dev env setup
@@ -97,7 +98,7 @@ This will build the native codes to `NativeOps/runtimes/[rid]/native/llm_sharp_o
 python NativeOps/build.py include
 ```
 
-If you already have a built binary, or you don't need the `NativeOps`, you can also install torch by pip or directly download the libs required:
+If you already have a built binary from latest release, or you don't need any op from the `NativeOps`, you can also install torch by pip or directly download the libs required:
 
 ```sh
 pip install -r requirements.txt

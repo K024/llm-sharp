@@ -2,6 +2,7 @@ using System.Diagnostics;
 using System.IO.Compression;
 using System.Runtime.InteropServices;
 using System.Text.Json;
+using TorchSharp;
 
 namespace llm_sharp.LLM.Utils;
 
@@ -10,6 +11,7 @@ public static class LibTorchDownloader
     public static string cuda => "cu121";
     public static string torch => "2.1.0";
     public static string arch => RuntimeInformation.IsOSPlatform(OSPlatform.Windows) ? "win_amd64" : "linux_x86_64";
+    public static string humanVersion => $"torch-{torch}+{cuda}";
 
     public static string defaultUrl => $"https://download.pytorch.org/whl/{cuda}/torch-{torch}%2B{cuda}-cp310-cp310-{arch}.whl";
     public static string whlFilename => $"torch-{torch}-{cuda}-{arch}-whl.zip";
@@ -112,7 +114,7 @@ public static class LibTorchLoader
         LibTorchDownloader.DownloadAndExtractLibTorch(skipVerification, optionalUrl).Wait();
 
         if (FindInDownloadCache() is null)
-            throw new Exception("Unable to find libtorch in download cache");
+            throw new Exception("Unable to find libtorch in download cache, download may failed");
     }
 
     public static void EnsureLoaded()
@@ -138,7 +140,7 @@ public static class LibTorchLoader
             catch (DllNotFoundException)
             {
                 Console.Error.WriteLine(
-                    "Unable to load libtorch.\n" +
+                    $"Unable to load libtorch. Required Version: {LibTorchDownloader.humanVersion}.\n" +
                     "Try:\n" +
                     "  Option 1: download libtorch with command:\n" +
                     "              llm-sharp --command download\n" +
@@ -147,6 +149,18 @@ public static class LibTorchLoader
                     "  Option 4: add libtorch to PATH (windows) or LD_LIBRARY_PATH (unix/linux)\n"
                 );
                 throw;
+            }
+            try
+            {
+                NativeOps.Ops.hello(torch.tensor(0f));
+            }
+            catch (Exception)
+            {
+                Console.Error.WriteLine(
+                    "Warning: unable to load llm_sharp_ops. The native ops (awq, fused ops, ...) will not be available.\n" +
+                    "    This may caused by incompatible libtorch cuda version.\n" +
+                    "    Required version: " + LibTorchDownloader.humanVersion
+                );
             }
         }
     }

@@ -91,7 +91,7 @@ def convert_weights(input: Path, output: Path):
                 f'model.layers.{i}.self_attn.v_proj.{suffix}': (f'layers.{i}.attn.qkv_proj.{suffix}', 2),
             })
             merge_config.update({
-                f'layers.{i}.attn.qkv_proj.{suffix}': dict(size=3, dim=1)
+                f'layers.{i}.attn.qkv_proj.{suffix}': dict(size=3, dim=0 if suffix == "weight" else 1)
             })
 
     weight_files = list(input.glob("*.safetensors"))

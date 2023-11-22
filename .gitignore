@@ -6,6 +6,7 @@
 # models and datasets
 /models
 /datasets
+/publish
 
 # User-specific files
 *.rsuser
