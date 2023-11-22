@@ -18,6 +18,7 @@ dotnet publish App -r win-x64 -c Release -o publish -p:PublishSingleFile=true --
 Move-Item publish/runtimes/win-x64/native/*.dll publish/
 Remove-Item -Recurse -Force publish/runtimes
 Remove-Item -Force publish/appsettings.*.json
+git rev-parse HEAD | Out-File -FilePath publish/commit.txt
 
 # make zip
 Compress-Archive -Path publish/* -DestinationPath publish/llm-sharp_win-x64.zip
