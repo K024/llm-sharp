@@ -89,7 +89,7 @@ public class LLMService
         }
     }
 
-    public LanguageModel? FindModel(string? model, bool for_chat = true)
+    protected LanguageModel? FindModel(string? model, bool for_chat = true)
     {
         if (string.IsNullOrWhiteSpace(model))
             model = default_model;
@@ -107,5 +107,15 @@ public class LLMService
         }
 
         return null;
+    }
+
+    public LanguageModel? FindChatModel(string? model)
+    {
+        return FindModel(model, true);
+    }
+
+    public LanguageModel? FindEncodeModel(string? model)
+    {
+        return FindModel(model, false);
     }
 }

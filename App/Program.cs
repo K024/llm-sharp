@@ -118,7 +118,7 @@ else if (command == "cli")
     if (string.IsNullOrEmpty(model) || string.IsNullOrEmpty(model_path))
     {
         var llmService = app.Services.GetRequiredService<LLMService>();
-        llm = llmService.FindModel(null)
+        llm = llmService.FindChatModel(null)
             ?? throw new Exception("No model found. Use --model <model_type> and --path <model_path> to specify a model.");
     }
     else

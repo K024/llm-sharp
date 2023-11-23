@@ -24,7 +24,7 @@ public partial class V1Controller : ControllerBase
     [Authorize]
     [HttpGet("models")]
     [ProducesResponseType(typeof(EmbeddingResult), 200)]
-    public async Task<IActionResult> Models()
+    public IActionResult Models()
     {
         var start_time = System.Diagnostics.Process.GetCurrentProcess().StartTime;
         var models = llmService.Models.Select(x => new ModelResult()

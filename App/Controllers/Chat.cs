@@ -99,7 +99,7 @@ public partial class V1Controller : ControllerBase
             stop_sequences = body.stop is null ? null : new List<string>() { body.stop },
         };
 
-        var llm = llmService.FindModel(body.model);
+        var llm = llmService.FindChatModel(body.model);
         if (llm is null)
             return NotFound(new { message = "Model not found" });
 
