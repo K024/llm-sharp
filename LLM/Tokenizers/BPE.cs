@@ -147,11 +147,8 @@ public class BPE : ITokenizer
         foreach (var match in pattern.Matches(text).ToList())
         {
             var piece = Encoding.UTF8.GetBytes(match.Value)
-                .Select(x => byte_encoder[x]).ToArray();
-
-            // it is safe to convert a char (in utf-16) to string
-            // because it's just mapped from utf-8 bytes (with max ranging 0 ~ 512)
-            var merged = byte_pair_merge(piece.Select(x => x.ToString()).ToArray(), bpe_ranks);
+                .Select(x => byte_encoder[x].ToString()).ToArray();
+            var merged = byte_pair_merge(piece, bpe_ranks);
             ret.AddRange(merged.Select(x => encoder[x]));
         }
         return ret;

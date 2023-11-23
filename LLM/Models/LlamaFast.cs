@@ -120,16 +120,26 @@ public class Llama : GenerativeLM<Llama.LlamaState>
         };
     }
 
-    protected override List<int> prepare_input(List<(string query, string answer)> history, string input)
+    protected override List<int> prepare_input(List<ChatMessage> messages)
     {
         var prompt = "";
-
-        foreach (var (query, answer) in history)
+        var system = "";
+        foreach (var message in messages)
         {
-            prompt += $"<s>[INST] {query} [/INST] {answer} </s>";
+            prompt += message.role switch
+            {
+                "user" when !string.IsNullOrEmpty(system) =>
+                    $"<s>[INST] <<SYS>>\n{system}\n<</SYS>>\n\n{message.content} [/INST]",
+                "user" => $"<s>[INST] {message.content} [/INST]",
+                "assistant" => $" {message.content} </s>",
+                _ => "",
+            };
+            system = message.role switch
+            {
+                "system" => message.content,
+                _ => ""
+            };
         }
-        prompt += $"<s>[INST] {input} [/INST]";
-
         return tokenizer.encode_text(prompt);
     }
 
@@ -150,8 +160,8 @@ public class Llama : GenerativeLM<Llama.LlamaState>
             past_key_values = past_key_values,
         });
 
-        var next = top_p_top_k_sampling(
-            output.logits[0, ^1], config.top_k, config.top_p, config.temperature
+        var next = top_p_sampling(
+            output.logits[0, ^1], config.top_p, config.temperature
         );
         var next_token = (int)next.item<long>();
 
@@ -217,7 +227,7 @@ class LlamaAwqBuilder : LlamaFastBuilder
     }
 }
 
-public class LlamaAwq: Llama
+public class LlamaAwq : Llama
 {
     public static void convert_turbomind(torch.nn.Module module)
     {

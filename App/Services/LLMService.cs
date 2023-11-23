@@ -59,6 +59,10 @@ public class LLMService
             default_model = config.models.Count > 0 ? config.models[0].name : "";
             foreach (var model in config.models)
             {
+                modelByName.Add(model.name, model.path);
+                foreach (var alias in model.aliases)
+                    modelByName.Add(alias, model.path);
+
                 if (models.ContainsKey(model.path))
                     continue;
 
@@ -70,10 +74,6 @@ public class LLMService
                 );
 
                 models.Add(model.path, model_instance);
-
-                modelByName.Add(model.name, model.path);
-                foreach (var alias in model.aliases)
-                    modelByName.Add(alias, model.path);
             }
 
             var to_remove = models.Where(x => config.models.FindIndex(m => m.path == x.Key) < 0).ToList();
@@ -107,29 +107,5 @@ public class LLMService
         }
 
         return null;
-    }
-
-    public IAsyncEnumerable<string>? ChatAsync(
-        string? model,
-        List<(string query, string answer)> history,
-        string input,
-        GenerationConfig? config = null)
-    {
-        var llm = FindModel(model, for_chat: true);
-
-        if (llm is null)
-            return null;
-
-        return llm.chat_async(history, input, config);
-    }
-
-    public Task<IList<float>?> EncodeAsync(string? model, string input)
-    {
-        var llm = FindModel(model, for_chat: false);
-
-        if (llm is null)
-            return Task.FromResult<IList<float>?>(null);
-
-        return llm.encode_async(input)!;
     }
 }

@@ -43,16 +43,20 @@ public class Qwen : GenerativeLM<QwenState>
         };
     }
 
-    protected override List<int> prepare_input(List<(string query, string answer)> history, string input)
+    protected override List<int> prepare_input(List<ChatMessage> messages)
     {
-        var prompt = "<|im_start|>system\nYou are a helpful assistant.<|im_end|>";
-
-        foreach (var (query, answer) in history)
+        var prompt = "";
+        foreach (var message in messages)
         {
-            prompt += $"\n<|im_start|>user\n{query}<|im_end|>\n<|im_start|>assistant\n{answer}<|im_end|>";
+            prompt += message.role switch
+            {
+                "system" => $"<|im_start|>system\n{message.content}<|im_end|>",
+                "user" => $"<|im_start|>user\n{message.content}<|im_end|>",
+                "assistant" => $"<|im_start|>assistant\n{message.content}<|im_end|>",
+                _ => ""
+            };
         }
-        prompt += $"\n<|im_start|>user\n{input}<|im_end|>\n<|im_start|>assistant\n";
-
+        prompt += "<|im_start|>assistant\n";
         return tokenizer.encode_text(prompt);
     }
 
@@ -73,8 +77,8 @@ public class Qwen : GenerativeLM<QwenState>
             past_key_values = past_key_values,
         });
 
-        var next = top_p_top_k_sampling(
-            output.logits[0, ^1], config.top_k, config.top_p, config.temperature
+        var next = top_p_sampling(
+            output.logits[0, ^1], config.top_p, config.temperature
         );
         var next_token = (int)next.item<long>();
 

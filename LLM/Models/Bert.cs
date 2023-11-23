@@ -473,7 +473,7 @@ public class BertEncoder : MaskedLM
         return list;
     }
 
-    protected override IList<float> encode_tokens(List<int> tokens)
+    protected override List<float> encode_tokens(List<int> tokens)
     {
         using var scope = torch.NewDisposeScope();
 

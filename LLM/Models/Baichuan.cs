@@ -70,16 +70,20 @@ public class Baichuan : GenerativeLM<BaichuanState>
         };
     }
 
-    protected override List<int> prepare_input(List<(string query, string answer)> history, string input)
+    protected override List<int> prepare_input(List<ChatMessage> messages)
     {
         var prompt = "";
-
-        foreach (var (query, answer) in history)
+        foreach (var message in messages)
         {
-            prompt += $"<reserved_106>{query}<reserved_107>{answer}";
+            prompt += message.role switch
+            {
+                "system" => $"{message.content}",
+                "user" => $"<reserved_106>{message.content}",
+                "assistant" => $"<reserved_107>{message.content}",
+                _ => "",
+            };
         }
-        prompt += $"<reserved_106>{input}<reserved_107>";
-
+        prompt += "<reserved_107>";
         return tokenizer.encode_text(prompt);
     }
 
@@ -100,8 +104,8 @@ public class Baichuan : GenerativeLM<BaichuanState>
             past_key_values = past_key_values,
         });
 
-        var next = top_p_top_k_sampling(
-            output.logits[0, ^1], config.top_k, config.top_p, config.temperature
+        var next = top_p_sampling(
+            output.logits[0, ^1], config.top_p, config.temperature
         );
         var next_token = (int)next.item<long>();
 

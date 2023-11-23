@@ -261,7 +261,9 @@ public class Unigram : ITokenizer
         flush_bytes();
 
         // remove prepended space and replace back spaces
-        var result = buffer.ToString().Replace('▁', ' ').TrimStart(' ');
+        var result = buffer.ToString().Replace('▁', ' ');
+        if (config.add_dummy_prefix && result.StartsWith(" "))
+            result = result[1..];
         return result;
     }
 }

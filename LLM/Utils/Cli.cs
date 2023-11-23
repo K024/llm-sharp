@@ -36,8 +36,10 @@ public static class CliExtensions
 
     public static void start_chat_cli(this LanguageModel llm)
     {
-        var history = new List<(string query, string answer)>();
+        var history = new List<ChatMessage>();
+        var system_prompt = "";
         var print_perf = false;
+        var generation_config = new GenerationConfig();
 
         Console.WriteLine("Use .help to get help");
 
@@ -57,6 +59,9 @@ public static class CliExtensions
                   "  .exit: exit chat\n" +
                   "  .clear: clear history\n" +
                   "  .undo: remove last history\n" +
+                  "  .system <system_prompt>: set system prompt\n" +
+                  "  .top_p <number>: set top_p value\n" +
+                  "  .temperature <number>: set temperature value\n" +
                   "  .perf: toggle performance logger\n"
                 );
                 continue;
@@ -81,18 +86,45 @@ public static class CliExtensions
                 print_perf = !print_perf;
                 continue;
             }
+            if (query.StartsWith(".system"))
+            {
+                system_prompt = query.Split(' ').Last();
+                continue;
+            }
+            if (query.StartsWith(".top_p"))
+            {
+                var value = query.Split(' ').Last();
+                if (float.TryParse(value, out var top_p))
+                    generation_config.top_p = top_p;
+                else
+                    Console.WriteLine($"Invalid top_p value: {value}");
+                continue;
+            }
+            if (query.StartsWith(".temperature"))
+            {
+                var value = query.Split(' ').Last();
+                if (float.TryParse(value, out var temperature))
+                    generation_config.temperature = temperature;
+                else
+                    Console.WriteLine($"Invalid temperature value: {value}");
+                continue;
+            }
 
             var answer = "";
 
             Console.Write("assistant > ");
-            foreach (var output in llm.chat(history, query))
+
+            if (history.Count <= 0 && !string.IsNullOrEmpty(system_prompt))
+                history.Add(new() { role = "system", content = system_prompt });
+
+            history.Add(new() { role = "user", content = query });
+            foreach (var output in llm.chat(history, generation_config))
             {
-                answer += output;
-                Console.Write(output);
+                answer += output.content;
+                Console.Write(output.content);
             }
             Console.WriteLine();
-
-            history.Add((query, answer));
+            history.Add(new() { role = "assistant", content = answer });
 
             if (print_perf)
             {

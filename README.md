@@ -30,7 +30,7 @@ C#:
   - [x] WordPiece
   - [ ] Unit tests
 - Serve
-  - [x] Basic api with ASP.Core
+  - [x] Openai compatible api with ASP.Core
   - [x] Command line interface
   - [ ] Batched inference
 
@@ -71,7 +71,9 @@ Modify `appsettings.json` in `App` project or add an environment aware config `a
 }
 ```
 
-Default will start an http api service (visit `http://localhost:5137/swagger/index.html` for api docs).
+Default will start an http api service. The api is almost compatible with openai v1 api with `/v1/chat/completions` and `/v1/embeddings`. Visit `http://localhost:5137/swagger/index.html` for api docs. You can also set `"Bearer": { "Token": "your-secret-token", "Tokens": ["some-extra-tokens"] }` in `appsettings.json` to enable endpoint authorization.
+
+After starting the api service, run `streamlit run web-ui.py` in [python-scripts](./python-scripts/) to start a simple web ui with streamlit.
 
 For command line interface:
 ```
@@ -100,11 +102,7 @@ This will build the native codes to `NativeOps/runtimes/[rid]/native/llm_sharp_o
 python NativeOps/build.py include
 ```
 
-If you already have a built binary from latest release, or you don't need any op from the `NativeOps`, you can also install torch by pip or directly download the libs required:
-
-```sh
-pip install -r requirements.txt
-```
+If you already have a built binary from latest release, or you don't need any op from the `NativeOps`, you can also install torch by pip or directly download the libs required.
 
 ## Performance
 

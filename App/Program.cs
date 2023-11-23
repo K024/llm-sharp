@@ -8,9 +8,15 @@ using System.Text.RegularExpressions;
 var builder = WebApplication.CreateBuilder(args);
 var config = builder.Configuration;
 
+builder.Services.AddAuthentication(BearerAuthentication.SchemeName)
+    .AddBearerAuthentication();
+builder.Services.Configure<BearerAuthenticationOptions>(config.GetSection("Bearer"));
+builder.Services.AddAuthorization();
 builder.Services.AddControllers().AddJsonOptions(options =>
     {
         options.JsonSerializerOptions.Converters.Add(new TupleConverterFactory());
+        options.JsonSerializerOptions.DefaultIgnoreCondition =
+            System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull;
     });
 builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddSwaggerGen();
@@ -30,7 +36,15 @@ app.UseSwaggerUI();
 app.UseRouting();
 
 app.UseCors();
+app.UseAuthentication();
 app.UseAuthorization();
+
+app.Use(async (ctx, next) =>
+{
+    await next();
+    if (ctx.Request.Path == "/" && ctx.Response.StatusCode == 404 &&!ctx.Response.HasStarted)
+        ctx.Response.Redirect("/swagger/");
+});
 
 app.MapControllers();
 
