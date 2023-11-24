@@ -32,7 +32,7 @@ public partial class NativeOpsTests
         var rotary = new RotaryEmbedding(1024, 128, dtype: torch.float16, device: torch.CUDA);
         var positions = torch.arange(100, 120, device: torch.CUDA).unsqueeze(0);
 
-        var (cos, sin) = rotary.forward(positions);
+        var (cos, sin) = rotary.forward(positions).weights.ToArray();
 
         // make strided tensors
         var qkv = torch.randn(1, 20, 40 * 128 * 3, dtype: torch.float16, device: torch.CUDA);

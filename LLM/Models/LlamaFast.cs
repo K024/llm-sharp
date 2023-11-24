@@ -17,11 +17,11 @@ public class FusedLlamaAttention : LlamaAttention
         dropout_rate = builder.config.dropout_rate;
     }
 
-    public override (Tensor h, (Tensor k_cache, Tensor v_cache) kv_cache) forward(
+    public override Tensor forward(
         Tensor x,
-        (Tensor cos, Tensor sin)? freqs_cis,
         Tensor? attention_mask,
-        (Tensor k_cache, Tensor v_cache)? kv_cache)
+        IRotary? freqs_cis,
+        IKvCache? kv_cache)
     {
         using var scope = torch.NewDisposeScope();
 
@@ -35,15 +35,10 @@ public class FusedLlamaAttention : LlamaAttention
         v = v.view(n_batch, n_seq, n_kv_head, d_head);
 
         if (freqs_cis is not null)
-            (q, k) = RotaryEmbedding.apply_rotary_emb_fused(q, k, freqs_cis.Value);
+            (q, k) = freqs_cis.apply(q, k);
 
         if (kv_cache is not null)
-        {
-            var (k_cache, v_cache) = kv_cache.Value;
-            k = torch.cat(new[] { k_cache, k }, dim: 1);
-            v = torch.cat(new[] { v_cache, v }, dim: 1);
-        }
-        kv_cache = (k.detach(), v.detach());
+            (k, v) = kv_cache.update(k, v);
 
         q = q.permute(0, 2, 1, 3);
         k = k.permute(0, 2, 1, 3);
@@ -63,13 +58,7 @@ public class FusedLlamaAttention : LlamaAttention
         output = output.permute(0, 2, 1, 3).reshape(n_batch, n_seq, -1);
         output = o_proj.call(output);
 
-        return (
-            scope.MoveToOuter(output),
-            (
-                scope.MoveToOuter(kv_cache.Value.k_cache),
-                scope.MoveToOuter(kv_cache.Value.v_cache)
-            )
-        );
+        return scope.MoveToOuter(output);
     }
 }
 
@@ -77,14 +66,20 @@ class LlamaFastBuilder : LlamaBuilder
 {
     public LlamaFastBuilder(LlamaConfig config) : base(config) { }
 
-    public override torch.nn.Module<
-        Tensor, (Tensor cos, Tensor sin)?, Tensor?, (Tensor k_cache, Tensor v_cache)?,
-        (Tensor h, (Tensor k_cache, Tensor v_cache) kv_cache)>
+    public override torch.nn.Module<Tensor, Tensor?, IRotary?, IKvCache?, Tensor>
         create_llama_attention()
         => new FusedLlamaAttention(this);
 
     public override torch.nn.Module<Tensor, Tensor> create_ln()
         => new FusedRMSNorm(new[] { config.hidden_size }, config.layernorm_epsilon, dtype: dtype, device: device);
+
+    public override torch.nn.Module<Tensor, IRotary> create_rotary_embedding()
+        => new FastRotaryEmbedding(config.vocab_size, config.hidden_size, theta: config.rope_theta, dtype: dtype, device: device);
+
+    public override List<IKvCache> create_kv_cache(long batch_size)
+        => Enumerable.Range(0, config.num_layers)
+            .Select(_ => (IKvCache)new FastKvCache(batch_size, config.num_key_value_heads, config.head_hidden_size, device, dtype))
+            .ToList();
 }
 
 class LlamaAwqBuilder : LlamaFastBuilder
@@ -93,10 +88,7 @@ class LlamaAwqBuilder : LlamaFastBuilder
 
     private bool creating_block = false;
 
-    public override
-        torch.nn.Module<Tensor, (Tensor cos, Tensor sin)?, Tensor?, (Tensor k_cache, Tensor v_cache)?,
-            (Tensor h, (Tensor k_cache, Tensor v_cache) kv_cache)>
-        create_llama_block()
+    public override torch.nn.Module<Tensor, Tensor?, IRotary?, IKvCache?, Tensor> create_llama_block()
     {
         try
         {

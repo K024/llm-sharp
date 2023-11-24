@@ -15,24 +15,24 @@ using F = torch.nn.functional;
 /// input => output
 using IModule = torch.nn.Module<torch.Tensor, torch.Tensor>;
 
-/// input, rotary_embedding, attention_mask, (k_cache, v_cache) => output, (k_cache, v_cache)
+/// input, attention_mask, rotary_embedding, (k_cache, v_cache) => output
 using ILlamaAttention = torch.nn.Module<
     torch.Tensor, // x
-    (torch.Tensor cos, torch.Tensor sin)?,
     torch.Tensor?, // attention mask
-    (torch.Tensor k_cache, torch.Tensor v_cache)?,
-    (torch.Tensor h, (torch.Tensor k_cache, torch.Tensor v_cache) kv_cache)
+    IRotary?,
+    IKvCache?,
+    torch.Tensor
 >;
 using ILlamaBlock = torch.nn.Module<
     torch.Tensor, // x
-    (torch.Tensor cos, torch.Tensor sin)?,
     torch.Tensor?, // attention mask
-    (torch.Tensor k_cache, torch.Tensor v_cache)?,
-    (torch.Tensor h, (torch.Tensor k_cache, torch.Tensor v_cache) kv_cache)
+    IRotary?,
+    IKvCache?,
+    torch.Tensor
 >;
 
 /// position_ids => (cos, sin)
-using IRotaryEmbedding = torch.nn.Module<torch.Tensor, (torch.Tensor cos, torch.Tensor sin)>;
+using IRotaryEmbedding = torch.nn.Module<torch.Tensor, IRotary>;
 
 /// q_seq_len, kv_seq_len => mask
 using IAlibi = torch.nn.Module<long, long, torch.Tensor>;
@@ -85,6 +85,9 @@ public class LlamaBuilder : AbstractBuilder
 
     public virtual IAlibi create_alibi()
         => new Alibi(config.num_attention_heads, config.max_sequence_length, dtype: dtype, device: device);
+
+    public virtual List<IKvCache> create_kv_cache(long batch_size)
+        => Enumerable.Range(0, config.num_layers).Select(_ => (IKvCache)new KvCache()).ToList();
 }
 
 public class LlamaAttention : ILlamaAttention
@@ -123,11 +126,11 @@ public class LlamaAttention : ILlamaAttention
         return scope.MoveToOuter(x.reshape(bs, n_heads * n, n_seq, d_head));
     }
 
-    public override (Tensor h, (Tensor k_cache, Tensor v_cache) kv_cache) forward(
+    public override Tensor forward(
         Tensor x,
-        (Tensor cos, Tensor sin)? freqs_cis,
         Tensor? attention_mask,
-        (Tensor k_cache, Tensor v_cache)? kv_cache)
+        IRotary? freqs_cis,
+        IKvCache? kv_cache)
     {
         using var scope = torch.NewDisposeScope();
 
@@ -141,18 +144,10 @@ public class LlamaAttention : ILlamaAttention
         v = v.view(n_batch, n_seq, n_kv_head, d_head);
 
         if (freqs_cis is not null)
-        {
-            q = RotaryEmbedding.apply_rotary_emb(q, freqs_cis.Value);
-            k = RotaryEmbedding.apply_rotary_emb(k, freqs_cis.Value);
-        }
+            (q, k) = freqs_cis.apply(q, k);
 
         if (kv_cache is not null)
-        {
-            var (k_cache, v_cache) = kv_cache.Value;
-            k = torch.cat(new[] { k_cache, k }, dim: 1);
-            v = torch.cat(new[] { v_cache, v }, dim: 1);
-        }
-        kv_cache = (k.detach(), v.detach());
+            (k, v) = kv_cache.update(k, v);
 
         q = q.permute(0, 2, 1, 3);
         k = k.permute(0, 2, 3, 1);
@@ -177,13 +172,7 @@ public class LlamaAttention : ILlamaAttention
         output = output.permute(0, 2, 1, 3).reshape(n_batch, n_seq, -1);
         output = o_proj.call(output);
 
-        return (
-            scope.MoveToOuter(output),
-            (
-                scope.MoveToOuter(kv_cache.Value.k_cache),
-                scope.MoveToOuter(kv_cache.Value.v_cache)
-            )
-        );
+        return scope.MoveToOuter(output);
     }
 }
 
@@ -204,29 +193,23 @@ public class LlamaBlock : ILlamaBlock
         RegisterComponents();
     }
 
-    public override (Tensor h, (Tensor k_cache, Tensor v_cache) kv_cache) forward(
+    public override Tensor forward(
         Tensor x,
-        (Tensor cos, Tensor sin)? freqs_cis,
         Tensor? attention_mask,
-        (Tensor k_cache, Tensor v_cache)? kv_cache)
+        IRotary? freqs_cis,
+        IKvCache? kv_cache)
     {
         using var scope = torch.NewDisposeScope();
-        var (h, new_kv_cache) = attn.call(
+        var h = attn.call(
             attn_ln.call(x),
-            freqs_cis,
             attention_mask,
+            freqs_cis,
             kv_cache
         );
         x = x + h;
         h = ffn.call(ffn_ln.call(x));
         x = x + h;
-        return (
-            scope.MoveToOuter(x),
-            (
-                scope.MoveToOuter(new_kv_cache.k_cache),
-                scope.MoveToOuter(new_kv_cache.v_cache)
-            )
-        );
+        return scope.MoveToOuter(x);
     }
 }
 
@@ -237,14 +220,13 @@ public record LlamaModelInput : IBatchEncoding
     public Tensor? attention_mask { get; set; }
     public Tensor? position_ids { get; set; }
     public Tensor? labels { get; set; }
-    public List<(Tensor k_cache, Tensor v_cache)>? past_key_values { get; set; }
+    public List<IKvCache>? past_key_values { get; set; }
 }
 
 public record LlamaModelOutput : IBatchEncoding
 {
     public Tensor? loss { get; set; }
     public Tensor logits { get; set; } = null!;
-    public List<(Tensor k_cache, Tensor v_cache)> current_key_values { get; set; } = null!;
 }
 
 public class LlamaModel : nn.Module<LlamaModelInput, LlamaModelOutput>
@@ -274,13 +256,18 @@ public class LlamaModel : nn.Module<LlamaModelInput, LlamaModelOutput>
         else
             alibi = builder.create_alibi();
 
+        kv_cache_factory = builder.create_kv_cache;
         RegisterComponents();
     }
+
+    protected Func<long, List<IKvCache>> kv_cache_factory;
+
+    public List<IKvCache> create_kv_cache(long batch_size) => kv_cache_factory(batch_size);
 
     public (
         Tensor input_embeddings,
         Tensor attention_mask,
-        (Tensor cos, Tensor sin)? freqs_cis
+        IRotary? freqs_cis
     ) prepare_input(LlamaModelInput input)
     {
         using var scope = torch.NewDisposeScope();
@@ -312,7 +299,7 @@ public class LlamaModel : nn.Module<LlamaModelInput, LlamaModelOutput>
         }
 
         if (past_key_values is not null)
-            n_seq_past = past_key_values[0].k_cache.shape[1];
+            n_seq_past = past_key_values[0].size;
         else
             n_seq_past = 0;
 
@@ -334,11 +321,11 @@ public class LlamaModel : nn.Module<LlamaModelInput, LlamaModelOutput>
         // unsqueeze n_head dim
         attention_mask = attention_mask[.., TensorIndex.None].type_as(input_embeddings);
 
-        (Tensor cos, Tensor sin)? freqs_cis = null;
+        IRotary? freqs_cis = null;
         if (rotary is not null)
         {
             freqs_cis = rotary.call(position_ids);
-            scope.MoveToOuter(freqs_cis.Value.cos, freqs_cis.Value.sin);
+            scope.MoveToOuter(freqs_cis.weights);
         }
         else if (alibi is not null)
         {
@@ -366,23 +353,17 @@ public class LlamaModel : nn.Module<LlamaModelInput, LlamaModelOutput>
 
         // forward layers
         var h = dropout.call(prepared_input_embeddings);
-        var current_key_values = new List<(Tensor k_cache, Tensor v_cache)>();
         foreach (var (i, layer) in layers.Select((v, i) => (i, v)))
         {
             using var scope = torch.NewDisposeScope();
-
             var kv_cache = input.past_key_values?[i];
-            (h, kv_cache) = layer.call(
+            h = layer.call(
                 h,
-                freqs_cis,
                 prepared_attention_mask,
+                freqs_cis,
                 kv_cache
             );
-            current_key_values.Add(kv_cache.Value);
-
             scope.MoveToOuter(h);
-            scope.MoveToOuter(kv_cache.Value.k_cache);
-            scope.MoveToOuter(kv_cache.Value.v_cache);
         }
 
         h = final_ln.call(h);
@@ -401,12 +382,10 @@ public class LlamaModel : nn.Module<LlamaModelInput, LlamaModelOutput>
             scope.MoveToOuter(loss);
         }
 
-        outer_scope.MoveToOuter(current_key_values.SelectMany(x => new[] { x.k_cache, x.v_cache }));
         return new()
         {
             logits = outer_scope.MoveToOuter(output),
             loss = loss is not null ? outer_scope.MoveToOuter(loss) : null,
-            current_key_values = current_key_values
         };
     }
 }
@@ -415,14 +394,25 @@ public abstract class AbstractLlama : GenerativeLM<AbstractLlama.LlamaState>
 {
     public class LlamaState : IDisposable
     {
-        public List<(Tensor k_cache, Tensor v_cache)> past_key_values { get; set; } = new();
+        public List<IKvCache> past_key_values { get; set; } = new();
         public torch.Generator? generator { get; set; }
 
         public void Dispose()
         {
-            past_key_values.SelectMany(x => new[] { x.k_cache, x.v_cache })
-                .ToList().ForEach(x => x.Dispose());
-            // reuse generator by reference
+            past_key_values.ForEach(x => x.Dispose());
+            generator?.Dispose();
+        }
+
+        public LlamaState Move()
+        {
+            var moved = new LlamaState()
+            {
+                past_key_values = past_key_values,
+                generator = generator,
+            };
+            past_key_values = new();
+            generator = null;
+            return moved;
         }
     }
 
@@ -451,12 +441,13 @@ public abstract class AbstractLlama : GenerativeLM<AbstractLlama.LlamaState>
             tokens = generated_tokens.TakeLast(1).ToList();
 
         var input_ids = torch.tensor(tokens, dtype: torch.int64, device: device).unsqueeze(0);
+        var past_key_values = state?.past_key_values ?? model.create_kv_cache(1);
 
         model.eval();
         var output = model.call(new()
         {
             input_ids = input_ids,
-            past_key_values = state?.past_key_values,
+            past_key_values = past_key_values,
         });
         var logits = output.logits[0, ^1];
 
@@ -467,10 +458,14 @@ public abstract class AbstractLlama : GenerativeLM<AbstractLlama.LlamaState>
         var next = top_p_sampling(logits, config.top_p, config.temperature, generator);
         var next_token = (int)next.item<long>();
 
-        scope.MoveToOuter(output.current_key_values.SelectMany(x => new[] { x.k_cache, x.v_cache }));
+        scope.MoveToOuter(past_key_values.SelectMany(x => x.weights));
         return (
             next_token,
-            new() { past_key_values = output.current_key_values, generator = generator }
+            state?.Move() ?? new()
+            {
+                past_key_values = past_key_values,
+                generator = generator,
+            }
         );
     }
 }

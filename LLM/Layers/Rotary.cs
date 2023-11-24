@@ -9,7 +9,14 @@ using nn = torch.nn;
 using Tensor = torch.Tensor;
 using F = torch.nn.functional;
 
-public class RotaryEmbedding : nn.Module<Tensor, (Tensor cos, Tensor sin)>
+public interface IRotary : IDisposable
+{
+    public (Tensor, Tensor) apply(Tensor query, Tensor key);
+
+    public IEnumerable<Tensor> weights { get; }
+}
+
+public class RotaryEmbedding : nn.Module<Tensor, IRotary>
 {
     public static (Tensor cos, Tensor sin) precompute_freqs_cis(long dim, long length, double theta = 10000.0)
     {
@@ -34,6 +41,44 @@ public class RotaryEmbedding : nn.Module<Tensor, (Tensor cos, Tensor sin)>
     public static (Tensor query, Tensor key) apply_rotary_emb_fused(Tensor query, Tensor key, (Tensor cos, Tensor sin) freqs_cis)
         => Ops.awq_rotary_embedding_neox(query, key, freqs_cis.cos, freqs_cis.sin);
 
+    public class SlowRotary : IRotary
+    {
+        public Tensor cos;
+        public Tensor sin;
+
+        public IEnumerable<Tensor> weights => new[] { cos, sin };
+
+        public SlowRotary(Tensor cos, Tensor sin)
+        {
+            this.cos = cos;
+            this.sin = sin;
+        }
+
+        public virtual (Tensor, Tensor) apply(Tensor query, Tensor key)
+        {
+            return (
+                apply_rotary_emb(query, (cos, sin)),
+                apply_rotary_emb(key, (cos, sin))
+            );
+        }
+
+        public void Dispose()
+        {
+            cos.Dispose();
+            sin.Dispose();
+        }
+    }
+
+    public class FastRotary : SlowRotary
+    {
+        public FastRotary(Tensor cos, Tensor sin) : base(cos, sin)
+        {
+        }
+
+        public override (Tensor, Tensor) apply(Tensor query, Tensor key)
+            => apply_rotary_emb_fused(query, key, (cos, sin));
+    }
+
     public Tensor cos;
     public Tensor sin;
 
@@ -57,14 +102,16 @@ public class RotaryEmbedding : nn.Module<Tensor, (Tensor cos, Tensor sin)>
         RegisterComponents();
     }
 
-    public override (Tensor cos, Tensor sin) forward(Tensor x)
+    public override IRotary forward(Tensor x)
     {
         using var scope = torch.NewDisposeScope();
         var (n_batch, n_seq) = x.shape;
-        return scope.MoveToOuter(
+        var rotary = new SlowRotary(
             cos[x].view(n_batch, n_seq, 1, -1),
             sin[x].view(n_batch, n_seq, 1, -1)
         );
+        scope.MoveToOuter(rotary.weights);
+        return rotary;
     }
 
     public override Dictionary<string, Tensor> state_dict(Dictionary<string, Tensor>? destination = null, string? prefix = null)
@@ -72,5 +119,30 @@ public class RotaryEmbedding : nn.Module<Tensor, (Tensor cos, Tensor sin)>
         // omit from state_dict
         // TODO: not working
         return destination ?? new();
+    }
+}
+
+public class FastRotaryEmbedding : RotaryEmbedding
+{
+    public FastRotaryEmbedding(
+        long num_embeddings,
+        long embedding_dims,
+        double theta = 10000.0,
+        torch.ScalarType? dtype = null,
+        torch.Device? device = null
+    ) : base(num_embeddings, embedding_dims, theta, dtype, device)
+    {
+    }
+
+    public override IRotary forward(Tensor x)
+    {
+        using var scope = torch.NewDisposeScope();
+        var (n_batch, n_seq) = x.shape;
+        var rotary = new FastRotary(
+            cos[x].view(n_batch, n_seq, 1, -1),
+            sin[x].view(n_batch, n_seq, 1, -1)
+        );
+        scope.MoveToOuter(rotary.sin, rotary.cos);
+        return rotary;
     }
 }
