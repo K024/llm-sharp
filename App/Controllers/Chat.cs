@@ -34,6 +34,7 @@ public partial class V1Controller : ControllerBase
         public float temperature { get; set; } = 1f;
         public float top_p { get; set; } = 1f;
         public bool stream { get; set; } = false;
+        public long? seed { get; set; }
     }
 
     public record ChatCompletionChoice
@@ -95,8 +96,11 @@ public partial class V1Controller : ControllerBase
         {
             top_p = body.top_p,
             temperature = body.temperature,
-            max_generated_tokens = body.max_tokens,
+            max_tokens = body.max_tokens,
             stop_sequences = body.stop is null ? null : new List<string>() { body.stop },
+            frequency_penalty = body.frequency_penalty,
+            presence_penalty = body.presence_penalty,
+            seed = body.seed,
         };
 
         var llm = llmService.FindChatModel(body.model);

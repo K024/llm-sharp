@@ -16,11 +16,13 @@ public record ChatMessage
 
 public record GenerationConfig
 {
-    public virtual int max_sequence_length { get; set; } = 2000;
-    public virtual int max_generated_tokens { get; set; } = 500;
-    public virtual float top_p { get; set; } = 1f;
-    public virtual float temperature { get; set; } = 1f;
-    public virtual List<string>? stop_sequences { get; set; }
+    public int max_tokens { get; set; } = 500;
+    public float top_p { get; set; } = 1f;
+    public float temperature { get; set; } = 1f;
+    public List<string>? stop_sequences { get; set; }
+    public float frequency_penalty { get; set; } = 0f;
+    public float presence_penalty { get; set; } = 0f;
+    public long? seed { get; set; }
 }
 
 public record ChatResponseDelta
@@ -98,11 +100,13 @@ public abstract class GenerativeLM<TState> : LanguageModel
     where TState : class, IDisposable
 {
     public override bool can_chat => true;
+    public abstract int max_sequence_length { get; }
 
     public static Tensor top_p_sampling(
         Tensor logits,
         double top_p = 0.8,
-        double temperature = 1.0)
+        double temperature = 1.0,
+        torch.Generator? generator = null)
     {
         using var scope = torch.NewDisposeScope();
 
@@ -116,15 +120,41 @@ public abstract class GenerativeLM<TState> : LanguageModel
 
         // top_p
         var cumsum = torch.cumsum(probs, dim: -1);
-        probs[(cumsum - probs) > top_p] = 0.0;
+        probs[cumsum > top_p] = 0.0;
         probs = probs / torch.sum(probs, dim: -1, keepdim: true);
 
         // sample
-        var next_token = torch.multinomial(probs, num_samples: 1);
+        var next_token = torch.multinomial(probs, num_samples: 1, generator: generator);
 
         var output = torch.gather(indices, dim: -1, index: next_token);
 
         return scope.MoveToOuter(output[TensorIndex.Ellipsis, 0]);
+    }
+
+    public static void logits_bias(
+        Tensor logits,
+        List<int> generated_tokens,
+        float frequency_penalty,
+        float presence_penalty)
+    {
+        using var scope = torch.NewDisposeScope();
+
+        if (logits.requires_grad)
+            throw new ArgumentException("logits should not require gradients for biasing");
+
+        if (generated_tokens.Count == 0 || (frequency_penalty == 0 && presence_penalty == 0))
+            return;
+
+        var generated = generated_tokens.GroupBy(x => x).ToDictionary(x => x.Key, x => x.Count());
+        var generated_keys = generated.Keys.ToList();
+        var generated_biasis = generated_keys
+            .Select(token_id => -frequency_penalty * generated[token_id] - presence_penalty)
+            .ToList();
+
+        var indices = torch.tensor(generated_keys, dtype: torch.int64, device: logits.device);
+        var biases = torch.tensor(generated_biasis, dtype: logits.dtype, device: logits.device);
+        
+        logits.scatter_add_(dim: -1, index: indices, src: biases);
     }
 
     /// <summary>
@@ -135,7 +165,7 @@ public abstract class GenerativeLM<TState> : LanguageModel
     /// <summary>
     /// Return a logits tensor with shape (vocab_size) 
     /// </summary>
-    protected abstract (int next_token, TState? state) generate_step(List<int> tokens, TState? state, GenerationConfig config);
+    protected abstract (int next_token, TState? state) generate_step(List<int> input_tokens, List<int> generated_tokens, TState? state, GenerationConfig config);
 
     /// <summary>
     /// Decode output
@@ -153,14 +183,13 @@ public abstract class GenerativeLM<TState> : LanguageModel
     public override IEnumerable<ChatResponseDelta> chat(List<ChatMessage> messages, GenerationConfig? config = null)
     {
         var state = (TState?)null;
-        var initial = prepare_input(messages);
+        var input_ids = prepare_input(messages);
 
         yield return new()
         {
-            tokens = initial.Count,
+            tokens = input_ids.Count,
         };
 
-        var input_ids = initial.ToList();
         var generated = new List<int>();
         var decoded_str = "";
         var decoded_tokens = 0;
@@ -174,15 +203,13 @@ public abstract class GenerativeLM<TState> : LanguageModel
             var finish_reason = "length";
 
             while (
-                input_ids.Count < config.max_sequence_length &&
-                generated.Count < config.max_generated_tokens)
+                input_ids.Count + generated.Count < max_sequence_length &&
+                generated.Count < config.max_tokens)
             {
-                using var no_grad = torch.no_grad();
-
                 stop_watch.Reset();
                 stop_watch.Start();
 
-                var (next_token, next_state) = generate_step(input_ids, state, config);
+                var (next_token, next_state) = generate_step(input_ids, generated, state, config);
 
                 stop_watch.Stop();
                 generation_time.Add(stop_watch.Elapsed.TotalSeconds);
@@ -196,7 +223,6 @@ public abstract class GenerativeLM<TState> : LanguageModel
                     break;
                 }
 
-                input_ids.Add(next_token);
                 generated.Add(next_token);
 
                 var decoded = decode_output(generated);
@@ -210,8 +236,14 @@ public abstract class GenerativeLM<TState> : LanguageModel
                     decoded_str = decoded;
                     decoded_tokens = generated.Count;
                 }
+
+                if (config.stop_sequences is not null && config.stop_sequences.Any(s => decoded.EndsWith(s)))
+                {
+                    finish_reason = "stop";
+                    break;
+                }
             }
-            last_generation_perf = (initial.Count, generated.Count, generation_time);
+            last_generation_perf = (input_ids.Count, generated.Count, generation_time);
 
             var final_decoded = decode_output(generated);
             if (final_decoded.Length > decoded_str.Length)

@@ -62,6 +62,7 @@ public static class CliExtensions
                   "  .system <system_prompt>: set system prompt\n" +
                   "  .top_p <number>: set top_p value\n" +
                   "  .temperature <number>: set temperature value\n" +
+                  "  .frequency_penalty <number>: set frequency_penalty value\n" +
                   "  .perf: toggle performance logger\n"
                 );
                 continue;
@@ -107,6 +108,15 @@ public static class CliExtensions
                     generation_config.temperature = temperature;
                 else
                     Console.WriteLine($"Invalid temperature value: {value}");
+                continue;
+            }
+            if (query.StartsWith(".frequency_penalty"))
+            {
+                var value = query.Split(' ').Last();
+                if (float.TryParse(value, out var frequency_penalty))
+                    generation_config.frequency_penalty = frequency_penalty;
+                else
+                    Console.WriteLine($"Invalid frequency_penalty value: {value}");
                 continue;
             }
 

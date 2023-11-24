@@ -17,6 +17,7 @@ dotnet publish App -r linux-x64 -c Release -o publish -p:PublishSingleFile=true 
 mv publish/runtimes/linux-x64/native/*.so publish/
 rm -rf publish/runtimes
 rm -rf publish/appsettings.*.json
+rm -rf publish/*.pdb
 git rev-parse HEAD > publish/commit.txt
 
 # make zip

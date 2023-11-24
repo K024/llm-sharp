@@ -26,25 +26,25 @@ using IBertBlock = torch.nn.Module<torch.Tensor, torch.Tensor?, torch.Tensor>;
 
 public record BertConfig
 {
-    public virtual long hidden_size { get; set; } = 768;
-    public virtual long inner_hidden_size { get; set; } = 3072;
-    public virtual long head_hidden_size { get; set; } = 64;
+    public long hidden_size { get; set; } = 768;
+    public long inner_hidden_size { get; set; } = 3072;
+    public long head_hidden_size { get; set; } = 64;
 
-    public virtual long num_attention_heads { get; set; } = 12;
-    public virtual int num_layers { get; set; } = 12;
+    public long num_attention_heads { get; set; } = 12;
+    public int num_layers { get; set; } = 12;
 
-    public virtual long vocab_size { get; set; } = 40000;
-    public virtual double dropout_rate { get; set; } = 0.0;
-    public virtual double layernorm_epsilon { get; set; } = 1e-05;
+    public long vocab_size { get; set; } = 40000;
+    public double dropout_rate { get; set; } = 0.0;
+    public double layernorm_epsilon { get; set; } = 1e-05;
 
-    public virtual long type_vocab_size { get; set; } = 4;
-    public virtual long max_sequence_length { get; set; } = 2048;
+    public long type_vocab_size { get; set; } = 4;
+    public long max_sequence_length { get; set; } = 2048;
 
     // "pooler": tanh(dense([CLS]))
     // "cls", "mean", "max": no extra layers
-    public virtual List<string> pooling_mode { get; set; } = new() { BertPooler.POOLER };
-    public virtual int classifier_classes { get; set; } = 0;
-    public virtual string classifier_mode { get; set; } = BertModel.SEQUENCE;
+    public List<string> pooling_mode { get; set; } = new() { BertPooler.POOLER };
+    public int classifier_classes { get; set; } = 0;
+    public string classifier_mode { get; set; } = BertModel.SEQUENCE;
 }
 
 public class BertBuilder : AbstractBuilder
@@ -429,24 +429,51 @@ public class BertModel : nn.Module<BertModelInput, BertModelOutput>
     }
 }
 
-public class BertEncoder : MaskedLM
+public abstract class AbstractBert : MaskedLM
 {
     public torch.Device? device { get; protected set; }
     public BertModel model { get; init; }
     public BertConfig model_config { get; init; }
+    
+#nullable disable
+    protected AbstractBert() { }
+#nullable restore
+
+    public virtual void to(torch.Device? device)
+    {
+        model.to(device);
+        this.device = device;
+    }
+
+    protected override List<float> encode_tokens(List<int> tokens)
+    {
+        using var scope = torch.NewDisposeScope();
+
+        var input_ids = torch.tensor(tokens, dtype: torch.int64, device: device).unsqueeze(0);
+        var type_ids = torch.zeros_like(input_ids);
+
+        model.eval();
+        var result = model.call(new BertModelInput()
+        {
+            input_ids = input_ids,
+            token_type_ids = type_ids,
+        });
+
+        if (result.pooler_output is null)
+            throw new Exception("No pooler for BertDualEncoder");
+
+        return result.pooler_output.cpu().to(torch.float32).data<float>().ToList();
+    }
+}
+
+public class BertEncoder : AbstractBert
+{
     public WordPiece tokenizer { get; init; }
     public WordPieceConfig tokenizer_config { get; init; }
 
 #nullable disable
     protected BertEncoder() { }
 #nullable restore
-
-    public virtual BertEncoder to(torch.Device? device)
-    {
-        model.to(device);
-        this.device = device;
-        return this;
-    }
 
     public static BertEncoder from_pretrained(
         string path,
@@ -471,25 +498,5 @@ public class BertEncoder : MaskedLM
         list.Insert(0, tokenizer["[CLS]"]);
         list.Add(tokenizer["[SEP]"]);
         return list;
-    }
-
-    protected override List<float> encode_tokens(List<int> tokens)
-    {
-        using var scope = torch.NewDisposeScope();
-
-        var input_ids = torch.tensor(tokens, dtype: torch.int64, device: device).unsqueeze(0);
-        var type_ids = torch.zeros_like(input_ids);
-
-        model.eval();
-        var result = model.call(new BertModelInput()
-        {
-            input_ids = input_ids,
-            token_type_ids = type_ids,
-        });
-
-        if (result.pooler_output is null)
-            throw new Exception("No pooler for BertDualEncoder");
-
-        return result.pooler_output.cpu().to(torch.float32).data<float>().ToList();
     }
 }

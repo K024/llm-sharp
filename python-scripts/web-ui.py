@@ -82,10 +82,11 @@ with st.sidebar:
 
     st.markdown("## Gneration parameters")
 
+    system_prompt = st.text_input("system_prompt", value="", placeholder="Empty")
     max_tokens = st.number_input("max_tokens", min_value=1, max_value=2000, value=800)
     temperature = st.number_input("temperature", min_value=0.0, max_value=4.0, value=0.7)
     top_p = st.number_input("top_p", min_value=0.0, max_value=1.0, value=1.0)
-    system_prompt = st.text_input("system_prompt", value="", placeholder="Empty")
+    frequency_penalty = st.number_input("frequency_penalty", min_value=-2.0, max_value=2.0, value=0.0)
 
     if st.button("Clear history"):
         st.session_state.history = []
@@ -130,6 +131,7 @@ if question:
                 top_p=top_p,
                 temperature=temperature,
                 max_tokens=max_tokens,
+                frequency_penalty=frequency_penalty,
             ):
                 answer += chunk
                 empty.write(answer)

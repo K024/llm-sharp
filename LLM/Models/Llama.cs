@@ -2,6 +2,8 @@ using TorchSharp;
 using TorchSharp.Modules;
 using llm_sharp.LLM.Utils;
 using llm_sharp.LLM.Layers;
+using llm_sharp.LLM.Pretrained;
+using llm_sharp.LLM.Tokenizers;
 
 namespace llm_sharp.LLM.Models;
 
@@ -37,24 +39,24 @@ using IAlibi = torch.nn.Module<long, long, torch.Tensor>;
 
 public record LlamaConfig
 {
-    public virtual long hidden_size { get; set; } = 4096;
-    public virtual long inner_hidden_size { get; set; } = 11008;
-    public virtual long head_hidden_size { get; set; } = 128;
-    public virtual string hidden_act { get; set; } = "silu";
+    public long hidden_size { get; set; } = 4096;
+    public long inner_hidden_size { get; set; } = 11008;
+    public long head_hidden_size { get; set; } = 128;
+    public string hidden_act { get; set; } = "silu";
 
-    public virtual long num_attention_heads { get; set; } = 32;
-    public virtual long num_key_value_heads { get; set; } = 32;
-    public virtual int num_layers { get; set; } = 32;
+    public long num_attention_heads { get; set; } = 32;
+    public long num_key_value_heads { get; set; } = 32;
+    public int num_layers { get; set; } = 32;
 
-    public virtual bool qkv_bias { get; set; } = false;
-    public virtual bool o_bias { get; set; } = false;
+    public bool qkv_bias { get; set; } = false;
+    public bool o_bias { get; set; } = false;
 
-    public virtual long vocab_size { get; set; } = 32000;
-    public virtual double dropout_rate { get; set; } = 0.0;
-    public virtual double layernorm_epsilon { get; set; } = 1e-06;
-    public virtual long max_sequence_length { get; set; } = 2048;
-    public virtual double rope_theta { get; set; } = 10000.0;
-    public virtual bool use_alibi { get; set; } = false;
+    public long vocab_size { get; set; } = 32000;
+    public double dropout_rate { get; set; } = 0.0;
+    public double layernorm_epsilon { get; set; } = 1e-06;
+    public long max_sequence_length { get; set; } = 2048;
+    public double rope_theta { get; set; } = 10000.0;
+    public bool use_alibi { get; set; } = false;
 }
 
 public class LlamaBuilder : AbstractBuilder
@@ -406,5 +408,129 @@ public class LlamaModel : nn.Module<LlamaModelInput, LlamaModelOutput>
             loss = loss is not null ? outer_scope.MoveToOuter(loss) : null,
             current_key_values = current_key_values
         };
+    }
+}
+
+public abstract class AbstractLlama : GenerativeLM<AbstractLlama.LlamaState>
+{
+    public class LlamaState : IDisposable
+    {
+        public List<(Tensor k_cache, Tensor v_cache)> past_key_values { get; set; } = new();
+        public torch.Generator? generator { get; set; }
+
+        public void Dispose()
+        {
+            past_key_values.SelectMany(x => new[] { x.k_cache, x.v_cache })
+                .ToList().ForEach(x => x.Dispose());
+            // reuse generator by reference
+        }
+    }
+
+    public torch.Device? device { get; protected set; }
+    public LlamaModel model { get; init; }
+    public LlamaConfig model_config { get; init; }
+
+    public override int max_sequence_length => (int)model_config.max_sequence_length;
+
+#nullable disable
+    protected AbstractLlama() { }
+#nullable restore
+
+    public virtual void to(torch.Device? device)
+    {
+        model.to(device);
+        this.device = device;
+    }
+
+    protected override (int next_token, LlamaState? state) generate_step(List<int> tokens, List<int> generated_tokens, LlamaState? state, GenerationConfig config)
+    {
+        using var scope = torch.NewDisposeScope();
+        using var no_grad = torch.no_grad();
+
+        if (generated_tokens.Count > 0)
+            tokens = generated_tokens.TakeLast(1).ToList();
+
+        var input_ids = torch.tensor(tokens, dtype: torch.int64, device: device).unsqueeze(0);
+
+        model.eval();
+        var output = model.call(new()
+        {
+            input_ids = input_ids,
+            past_key_values = state?.past_key_values,
+        });
+        var logits = output.logits[0, ^1];
+
+        var generator = state?.generator ??
+            (config.seed.HasValue ? new torch.Generator((ulong)config.seed.Value, device) : null);
+
+        logits_bias(logits, generated_tokens, config.frequency_penalty, config.presence_penalty);
+        var next = top_p_sampling(logits, config.top_p, config.temperature, generator);
+        var next_token = (int)next.item<long>();
+
+        scope.MoveToOuter(output.current_key_values.SelectMany(x => new[] { x.k_cache, x.v_cache }));
+        return (
+            next_token,
+            new() { past_key_values = output.current_key_values, generator = generator }
+        );
+    }
+}
+
+public class Llama : AbstractLlama
+{
+    public SentencePieceBPE tokenizer { get; init; }
+    public SentencePieceBPEConfig tokenizer_config { get; init; }
+
+#nullable disable
+    protected Llama() { }
+#nullable restore
+
+    public static Llama from_pretrained(
+        string path,
+        torch.ScalarType? dtype = null,
+        torch.Device? device = null)
+    {
+        var (model, model_config) = model_from_pretrained<LlamaModel, LlamaConfig, LlamaBuilder>(path, dtype, device);
+        var (tokenizer, tokenizer_config) = tokenizer_from_pretrained<SentencePieceBPE, SentencePieceBPEConfig>(path);
+        return new Llama()
+        {
+            device = device,
+            model = model,
+            model_config = model_config,
+            tokenizer = tokenizer,
+            tokenizer_config = tokenizer_config,
+        };
+    }
+
+    protected override List<int> prepare_input(List<ChatMessage> messages)
+    {
+        var prompt = "";
+        var system = "";
+        foreach (var message in messages)
+        {
+            prompt += message.role switch
+            {
+                "user" when !string.IsNullOrEmpty(system) =>
+                    $"<s>[INST] <<SYS>>\n{system}\n<</SYS>>\n\n{message.content} [/INST]",
+                "user" => $"<s>[INST] {message.content} [/INST]",
+                "assistant" => $" {message.content} </s>",
+                _ => "",
+            };
+            system = message.role switch
+            {
+                "system" => message.content,
+                _ => ""
+            };
+        }
+        return tokenizer.encode_text(prompt);
+    }
+
+    protected override string decode_output(List<int> tokens)
+    {
+        return tokenizer.decode_text(tokens);
+    }
+
+    protected override List<int> get_eos_tokens()
+    {
+        return tokenizer.eos_ids;
     }
 }
