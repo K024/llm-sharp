@@ -79,12 +79,14 @@ void rotary_embedding_neox(
   TORCH_CHECK(key.stride(3) == 1);
   TORCH_CHECK(query.stride(2) == head_size);
   TORCH_CHECK(key.stride(2) == head_size);
+  TORCH_CHECK(key.stride(1) == stride_in);
   TORCH_CHECK(out_query.is_contiguous());
   TORCH_CHECK(out_key.is_contiguous());
+  TORCH_CHECK(rot_dim <= head_size);
 
   dim3 grid(num_tokens);
   dim3 block(std::min(num_heads * rot_dim / 2, 512));
-  cudaStream_t stream = c10::cuda::getCurrentCUDAStream(cos.device().index()).stream();
+  const cudaStream_t stream = at::cuda::getCurrentCUDAStream(query.device().index());
   AT_DISPATCH_FLOATING_TYPES_AND2(
     at::ScalarType::Half,
     at::ScalarType::BFloat16,

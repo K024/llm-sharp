@@ -753,7 +753,7 @@ torch::Tensor gemmv2_forward_cuda(
     auto out_feats = reinterpret_cast<half*>(_out_feats.data_ptr<at::Half>());
     auto scaling_factors = reinterpret_cast<half*>(_scaling_factors.data_ptr<at::Half>());
     auto zeros = reinterpret_cast<int*>(_zeros.data_ptr<int>());
-    cudaStream_t stream = c10::cuda::getCurrentCUDAStream(_in_feats.device().index()).stream();
+    const cudaStream_t stream = at::cuda::getCurrentCUDAStream(_kernel.device().index());
 
     // blockIdx_x: i_factors[0] * j_factors[0]
     // blockIdx_y: i_factors[1] * j_factors[1]
@@ -813,7 +813,7 @@ torch::Tensor gemm_forward_cuda(
     auto scaling_factors = reinterpret_cast<half*>(_scaling_factors.data_ptr<at::Half>());
     auto zeros = reinterpret_cast<int*>(_zeros.data_ptr<int>());
     int group_size = num_in_channels / _scaling_factors.size(0);
-    cudaStream_t stream = c10::cuda::getCurrentCUDAStream(_in_feats.device().index()).stream();
+    const cudaStream_t stream = at::cuda::getCurrentCUDAStream(_kernel.device().index());
 
     if (num_out_channels % 64 != 0)
         throw std::invalid_argument("OC is not multiple of cta_N = 64");

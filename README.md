@@ -71,7 +71,7 @@ Modify `appsettings.json` in `App` project or add an environment aware config `a
 }
 ```
 
-Default will start an http api service. The api is almost compatible with openai v1 api with `/v1/chat/completions` and `/v1/embeddings`. Visit `http://localhost:5137/swagger/index.html` for api docs. You can also set `"Bearer": { "Token": "your-secret-token", "Tokens": ["some-extra-tokens"] }` in `appsettings.json` to enable endpoint authorization.
+Default will start an http api service. The api is almost compatible with openai v1 api with `/v1/chat/completions` and `/v1/embeddings`. Visit `http://<server_url>/swagger/index.html` for api docs. You can also set `"Bearer": { "Token": "your-secret-token", "Tokens": ["some-extra-tokens"] }` in `appsettings.json` to enable endpoint authorization. You can use `--url http://<host>:<port>,http://<host2>:<port2>` to change the default listening urls.
 
 After starting the api service, run `streamlit run web-ui.py` in [python-scripts](./python-scripts/) to start a simple web ui with streamlit.
 

@@ -50,8 +50,22 @@ public class FusedLlamaAttention : LlamaAttention
             v = repeat_kv(v, n_groups);
         }
 
+        var is_causal = false;
+        if (attention_mask is null ||
+            attention_mask.shape[0] == 1 /* batch */ &&
+            attention_mask.shape[1] == 1 /* head, alibi mask is not 1 */ )
+        {
+            // is default causal mask or generative mask
+            attention_mask = null;
+            // on equal seq len, enable internal causal
+            if (q.shape[2] == k.shape[2])
+                is_causal = true;
+        }
+
         var output = Ops.torch_scaled_dot_product_attention(
-            q, k, v, attention_mask,
+            q, k, v,
+            attention_mask,
+            is_causal: is_causal,
             dropout_p: training ? dropout_rate : 0
         );
 
@@ -74,7 +88,7 @@ class LlamaFastBuilder : LlamaBuilder
         => new FusedRMSNorm(new[] { config.hidden_size }, config.layernorm_epsilon, dtype: dtype, device: device);
 
     public override torch.nn.Module<Tensor, IRotary> create_rotary_embedding()
-        => new FastRotaryEmbedding(config.vocab_size, config.hidden_size, theta: config.rope_theta, dtype: dtype, device: device);
+        => new FastRotaryEmbedding(config.vocab_size, config.head_hidden_size, theta: config.rope_theta, dtype: dtype, device: device);
 
     public override List<IKvCache> create_kv_cache(long batch_size)
         => Enumerable.Range(0, config.num_layers)

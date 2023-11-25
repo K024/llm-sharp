@@ -4,7 +4,7 @@
 #include "../third-party/lmdeploy/gemm_s_f16/gemm_s4_f16.h"
 #include "../third-party/lmdeploy/llama/llama_kernels.h"
 
-#include "c10/cuda/CUDAStream.h"
+#include <c10/cuda/CUDAStream.h>
 
 
 // input: [n, k]
@@ -42,7 +42,7 @@ turbomind_gemm_s4_f16(const Tensor input, const Tensor qweight, const Tensor sca
             torch::TensorOptions()
                 .dtype(torch::kHalf).device(input->device()));
 
-        cudaStream_t st = c10::cuda::getCurrentCUDAStream(input->device().index()).stream();
+        const cudaStream_t stream = at::cuda::getCurrentCUDAStream(input->device().index());
 
         gemm_instance.Run(
             (half *)output.data_ptr(),
@@ -52,7 +52,7 @@ turbomind_gemm_s4_f16(const Tensor input, const Tensor qweight, const Tensor sca
             m, n, k, group_size,
             turbomind::GemmS4F16::kGemm,
             -1, // estimate best kernel
-            st);
+            stream);
 
         res = std::move(output);
     );
@@ -76,7 +76,7 @@ turbomind_convert_s4_k_m8(Tensor qweight_dst, Tensor scale_and_zeros_dst, const 
 
         torch::Tensor workspace = torch::zeros_like(*scales);
 
-        cudaStream_t st = c10::cuda::getCurrentCUDAStream(qweight->device().index()).stream();
+        const cudaStream_t stream = at::cuda::getCurrentCUDAStream(qweight->device().index());
 
         turbomind::convert_s4_k_m8(
             (uint32_t *)qweight_dst->data_ptr(),
@@ -85,7 +85,7 @@ turbomind_convert_s4_k_m8(Tensor qweight_dst, Tensor scale_and_zeros_dst, const 
             (uint32_t *)qweight->data_ptr(),
             (half *)scales->data_ptr(),
             (uint32_t *)qzeros->data_ptr(),
-            m, k, group_size, st);
+            m, k, group_size, stream);
     )
 }
 
@@ -112,13 +112,13 @@ turbomind_rms_norm(const Tensor input, const Tensor scale, float eps)
             torch::TensorOptions()
                 .dtype(torch::kHalf).device(input->device()));
 
-        cudaStream_t st = c10::cuda::getCurrentCUDAStream(input->device().index()).stream();
+        const cudaStream_t stream = at::cuda::getCurrentCUDAStream(input->device().index());
 
         turbomind::invokeRootMeanSquareNorm(
             (half *)output.data_ptr(),
             (half *)input->data_ptr(),
             (half *)scale->data_ptr(),
-            eps, m, n, st);
+            eps, m, n, stream);
 
         res = std::move(output);
     );

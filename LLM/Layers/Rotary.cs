@@ -142,7 +142,7 @@ public class FastRotaryEmbedding : RotaryEmbedding
             cos[x].view(n_batch, n_seq, 1, -1),
             sin[x].view(n_batch, n_seq, 1, -1)
         );
-        scope.MoveToOuter(rotary.sin, rotary.cos);
+        scope.MoveToOuter(rotary.weights);
         return rotary;
     }
 }

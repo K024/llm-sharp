@@ -64,11 +64,36 @@ public partial class NativeOpsTests
         var scores = torch.softmax(qk, dim: -1, dtype: torch.float32);
         var expected = torch.matmul(scores.type_as(qk), value);
 
-        var actual = Ops.torch_scaled_dot_product_attention(query, key, value, mask);
-
-        Console.WriteLine((expected - actual).abs().max().ToString(true));
+        var actual = Ops.torch_scaled_dot_product_attention(query, key, value, mask, use_flash: false, use_mem_effecient: false);
 
         Assert.IsTrue((expected - actual).abs().mean().to(torch.float32).item<float>() < 0.0005);
         Assert.IsTrue((expected - actual).abs().max().to(torch.float32).item<float>() < 0.005);
+    }
+
+    [TestMethod]
+    public void TorchOps_ScaledDotProductAttentionShouldWorkWithCausal()
+    {
+        var query = torch.randn(8, 40, 10, 128, dtype: torch.float16, device: torch.CUDA);
+        var key = torch.randn(8, 40, 10, 128, dtype: torch.float16, device: torch.CUDA);
+        var value = torch.randn(8, 40, 10, 128, dtype: torch.float16, device: torch.CUDA);
+        var mask = torch.zeros(8, 1, 10, 10, dtype: torch.float16, device: torch.CUDA);
+
+        var temp_mask = torch.ones(10, 10, dtype: torch.ScalarType.Bool, device: torch.CUDA).tril(diagonal: 0);
+        mask.masked_fill_(temp_mask.logical_not().unsqueeze(0).unsqueeze(0), float.NegativeInfinity);
+
+        var scale = Math.Sqrt(query.shape[^1]);
+        var qk = torch.matmul(query, key.transpose(-1, -2)) / scale + mask;
+        var scores = torch.softmax(qk, dim: -1, dtype: torch.float32);
+        var expected = torch.matmul(scores.type_as(qk), value);
+
+        var actual = Ops.torch_scaled_dot_product_attention(query, key, value, is_causal: true, use_math: false, use_mem_effecient: false);
+
+        Assert.IsTrue((expected - actual).abs().mean().to(torch.float32).item<float>() < 0.0005);
+        Assert.IsTrue((expected - actual).abs().max().to(torch.float32).item<float>() < 0.005);
+
+        var actual2 = Ops.torch_scaled_dot_product_attention(query, key, value, is_causal: true, use_math: false, use_flash: false);
+
+        Assert.IsTrue((expected - actual2).abs().mean().to(torch.float32).item<float>() < 0.0005);
+        Assert.IsTrue((expected - actual2).abs().max().to(torch.float32).item<float>() < 0.005);
     }
 }

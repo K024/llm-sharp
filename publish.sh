@@ -2,9 +2,11 @@
 set -euo pipefail
 cd "$(dirname "$0")"
 
-# clean build of NativeOps
-python NativeOps/build.py clean
-python NativeOps/build.py
+# clean build of NativeOps if with build command
+if [ $# -eq 1 ] && [ $1 = "build" ]; then
+    python NativeOps/build.py clean
+    python NativeOps/build.py
+fi
 
 # run tests
 dotnet test

@@ -34,13 +34,17 @@ public class Qwen : AbstractLlama
     protected override List<int> prepare_input(List<ChatMessage> messages)
     {
         var prompt = "";
+
+        if (messages.All(x => x.role != "system"))
+            prompt += "<|im_start|>system\nYou are a helpful assistant.<|im_end|>\n";
+
         foreach (var message in messages)
         {
             prompt += message.role switch
             {
-                "system" => $"<|im_start|>system\n{message.content}<|im_end|>",
-                "user" => $"<|im_start|>user\n{message.content}<|im_end|>",
-                "assistant" => $"<|im_start|>assistant\n{message.content}<|im_end|>",
+                "system" => $"<|im_start|>system\n{message.content}<|im_end|>\n",
+                "user" => $"<|im_start|>user\n{message.content}<|im_end|>\n",
+                "assistant" => $"<|im_start|>assistant\n{message.content}<|im_end|>\n",
                 _ => ""
             };
         }
