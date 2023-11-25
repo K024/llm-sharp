@@ -32,7 +32,7 @@ public class LLMService
     }
 
     private string default_model = "";
-    private Dictionary<string, LanguageModel> models = new();
+    private Dictionary<string, PretrainedModel> models = new();
     private Dictionary<string, string> modelByName = new();
 
     public IEnumerable<string> Models => modelByName.Keys;
@@ -66,7 +66,7 @@ public class LLMService
                 if (models.ContainsKey(model.path))
                     continue;
 
-                var model_instance = LanguageModel.from_pretrained(
+                var model_instance = PretrainedModel.from_pretrained(
                     model.type,
                     model.path,
                     Enum.Parse<torch.ScalarType>(model.dtype, true),
@@ -89,7 +89,7 @@ public class LLMService
         }
     }
 
-    protected LanguageModel? FindModel(string? model, bool for_chat = true)
+    protected T? FindModel<T>(string? model) where T : PretrainedModel
     {
         if (string.IsNullOrWhiteSpace(model))
             model = default_model;
@@ -97,25 +97,20 @@ public class LLMService
         if (modelByName.TryGetValue(model, out var path))
         {
             var lm = models.GetValueOrDefault(path);
-            if (lm is null)
-                return null;
-            if (for_chat && !lm.can_chat)
-                return null;
-            if (!for_chat && !lm.can_encode)
-                return null;
-            return lm;
+            if (lm is T typed_lm)
+                return typed_lm;
         }
 
         return null;
     }
 
-    public LanguageModel? FindChatModel(string? model)
+    public GenerativeLM? FindGenerativeLM(string? model)
     {
-        return FindModel(model, true);
+        return FindModel<GenerativeLM>(model);
     }
 
-    public LanguageModel? FindEncodeModel(string? model)
+    public MaskedLM? FindMaskedLM(string? model)
     {
-        return FindModel(model, false);
+        return FindModel<MaskedLM>(model);
     }
 }

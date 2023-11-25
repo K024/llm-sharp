@@ -11,6 +11,7 @@ public class Baichuan : AbstractLlama
 {
     public SentencePieceBPE tokenizer { get; init; }
     public SentencePieceBPEConfig tokenizer_config { get; init; }
+    protected override List<int> eos_tokens => tokenizer.eos_ids;
 
 #nullable disable
     protected Baichuan() { }
@@ -78,11 +79,6 @@ public class Baichuan : AbstractLlama
     protected override string decode_output(List<int> tokens)
     {
         return tokenizer.decode_text(tokens);
-    }
-
-    protected override List<int> get_eos_tokens()
-    {
-        return tokenizer.eos_ids;
     }
 }
 

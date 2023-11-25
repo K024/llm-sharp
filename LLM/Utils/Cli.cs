@@ -34,7 +34,7 @@ public static class CliExtensions
         }
     }
 
-    public static void start_chat_cli(this LanguageModel llm)
+    public static void start_chat_cli(this GenerativeLM llm)
     {
         var history = new List<ChatMessage>();
         var system_prompt = "";

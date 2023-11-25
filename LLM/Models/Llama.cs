@@ -402,18 +402,6 @@ public abstract class AbstractLlama : GenerativeLM<AbstractLlama.LlamaState>
             past_key_values.ForEach(x => x.Dispose());
             generator?.Dispose();
         }
-
-        public LlamaState Move()
-        {
-            var moved = new LlamaState()
-            {
-                past_key_values = past_key_values,
-                generator = generator,
-            };
-            past_key_values = new();
-            generator = null;
-            return moved;
-        }
     }
 
     public torch.Device? device { get; protected set; }
@@ -432,7 +420,15 @@ public abstract class AbstractLlama : GenerativeLM<AbstractLlama.LlamaState>
         this.device = device;
     }
 
-    protected override (int next_token, LlamaState? state) generate_step(List<int> tokens, List<int> generated_tokens, LlamaState? state, GenerationConfig config)
+    protected override LlamaState prepare_init_state(List<int> input_tokens, GenerationConfig config)
+    {
+        return new() {
+            past_key_values = model.create_kv_cache(1),
+            generator = config.seed.HasValue ? new torch.Generator((ulong)config.seed.Value, device) : null
+        };
+    }
+
+    protected override int generate_step(List<int> tokens, List<int> generated_tokens, LlamaState state, GenerationConfig config)
     {
         using var scope = torch.NewDisposeScope();
         using var no_grad = torch.no_grad();
@@ -441,32 +437,20 @@ public abstract class AbstractLlama : GenerativeLM<AbstractLlama.LlamaState>
             tokens = generated_tokens.TakeLast(1).ToList();
 
         var input_ids = torch.tensor(tokens, dtype: torch.int64, device: device).unsqueeze(0);
-        var past_key_values = state?.past_key_values ?? model.create_kv_cache(1);
 
         model.eval();
         var output = model.call(new()
         {
             input_ids = input_ids,
-            past_key_values = past_key_values,
+            past_key_values = state.past_key_values,
         });
         var logits = output.logits[0, ^1];
 
-        var generator = state?.generator ??
-            (config.seed.HasValue ? new torch.Generator((ulong)config.seed.Value, device) : null);
-
         logits_bias(logits, generated_tokens, config.frequency_penalty, config.presence_penalty);
-        var next = top_p_sampling(logits, config.top_p, config.temperature, generator);
+        var next = top_p_sampling(logits, config.top_p, config.temperature, state.generator);
         var next_token = (int)next.item<long>();
 
-        scope.MoveToOuter(past_key_values.SelectMany(x => x.weights));
-        return (
-            next_token,
-            state?.Move() ?? new()
-            {
-                past_key_values = past_key_values,
-                generator = generator,
-            }
-        );
+        return next_token;
     }
 }
 
@@ -474,6 +458,7 @@ public class Llama : AbstractLlama
 {
     public SentencePieceBPE tokenizer { get; init; }
     public SentencePieceBPEConfig tokenizer_config { get; init; }
+    protected override List<int> eos_tokens => tokenizer.eos_ids;
 
 #nullable disable
     protected Llama() { }
@@ -522,10 +507,5 @@ public class Llama : AbstractLlama
     protected override string decode_output(List<int> tokens)
     {
         return tokenizer.decode_text(tokens);
-    }
-
-    protected override List<int> get_eos_tokens()
-    {
-        return tokenizer.eos_ids;
     }
 }

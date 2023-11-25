@@ -103,7 +103,7 @@ public partial class V1Controller : ControllerBase
             seed = body.seed,
         };
 
-        var llm = llmService.FindChatModel(body.model);
+        var llm = llmService.FindGenerativeLM(body.model);
         if (llm is null)
             return NotFound(new { message = "Model not found" });
 

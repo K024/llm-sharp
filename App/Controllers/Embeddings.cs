@@ -42,7 +42,7 @@ public partial class V1Controller : ControllerBase
     [ProducesResponseType(typeof(EmbeddingResult), 200)]
     public async Task<IActionResult> Embed(EmbeddingRequest request)
     {
-        var llm = llmService.FindEncodeModel(request.model);
+        var llm = llmService.FindMaskedLM(request.model);
         if (llm is null)
             return NotFound(new { message = "Model not found" });
 

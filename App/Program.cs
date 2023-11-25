@@ -50,8 +50,7 @@ app.MapControllers();
 
 if (new[] { "help", "h" }.SelectMany(h => new[] { "", "--", "-", "/" }.Select(p => p + h)).Any(x => args.Contains(x)))
 {
-    var modelTypes = typeof(LanguageModel).Assembly.GetTypes()
-        .Where(type => type.IsClass && !type.IsAbstract && type.IsSubclassOf(typeof(LanguageModel)))
+    var modelTypes = PretrainedModel.get_pretrained_model_types()
         .Select(type => type.Name).ToList();
 
     var torchVersion = LibTorchDownloader.humanVersion;
@@ -114,16 +113,16 @@ else if (command == "cli")
     var dtype = config.GetValue("dtype", "float16");
     var device = config.GetValue("device", "cuda");
 
-    LanguageModel llm;
+    GenerativeLM llm;
     if (string.IsNullOrEmpty(model) || string.IsNullOrEmpty(model_path))
     {
         var llmService = app.Services.GetRequiredService<LLMService>();
-        llm = llmService.FindChatModel(null)
+        llm = llmService.FindGenerativeLM(null)
             ?? throw new Exception("No model found. Use --model <model_type> and --path <model_path> to specify a model.");
     }
     else
     {
-        llm = LanguageModel.from_pretrained(
+        llm = PretrainedModel.from_pretrained<GenerativeLM>(
             model,
             model_path,
             Enum.Parse<torch.ScalarType>(dtype, true),

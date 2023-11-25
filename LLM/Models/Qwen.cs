@@ -8,6 +8,7 @@ public class Qwen : AbstractLlama
 {
     public TikToken tokenizer { get; init; }
     public TikTokenConfig tokenizer_config { get; init; }
+    protected override List<int> eos_tokens => tokenizer.eos_ids;
 
 #nullable disable
     protected Qwen() { }
@@ -50,11 +51,6 @@ public class Qwen : AbstractLlama
     protected override string decode_output(List<int> tokens)
     {
         return tokenizer.decode_text(tokens);
-    }
-
-    protected override List<int> get_eos_tokens()
-    {
-        return tokenizer.eos_ids;
     }
 }
 

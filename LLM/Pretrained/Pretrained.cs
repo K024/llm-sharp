@@ -13,7 +13,7 @@ using Tensor = torch.Tensor;
 using ScalarType = torch.ScalarType;
 using Device = torch.Device;
 
-public abstract partial class LanguageModel
+public abstract class PretrainedModel
 {
     public static JsonSerializerOptions TupleJsonSerializerOptions { get; } = new()
     {
@@ -26,34 +26,43 @@ public abstract partial class LanguageModel
     public const string tokenizer_config_file = "tokenizer_config.json";
     public const string model_weights_pattern = "*.safetensors";
 
-    public static LanguageModel from_pretrained(
+    public static IEnumerable<Type> get_pretrained_model_types(Assembly? assembly = null)
+        => get_pretrained_model_types<PretrainedModel>(assembly);
+
+    public static IEnumerable<Type> get_pretrained_model_types<T>(Assembly? assembly = null) where T : PretrainedModel
+        => (assembly ?? typeof(PretrainedModel).Assembly)
+            .GetTypes()
+            .Where(type => type.IsClass && !type.IsAbstract && type.IsSubclassOf(typeof(T)));
+
+    public static PretrainedModel from_pretrained(
         string classHint,
         string path,
         ScalarType? dtype = null,
         Device? device = null,
         Assembly? assembly = null)
-    {
-        var types = (assembly ?? typeof(LanguageModel).Assembly).GetTypes();
+        => from_pretrained<PretrainedModel>(classHint, path, dtype, device, assembly);
 
-        var type = types.Where(x =>
-            x.Name == classHint
-            && x.IsClass
-            && !x.IsAbstract
-            && x.IsSubclassOf(typeof(LanguageModel))
-        )
-            .FirstOrDefault()
-            ?? throw new Exception($"Unable to find class '{classHint}'. Try give the correct Assembly");
+    public static T from_pretrained<T>(
+        string classHint,
+        string path,
+        ScalarType? dtype = null,
+        Device? device = null,
+        Assembly? assembly = null)
+        where T : PretrainedModel
+    {
+        var type = get_pretrained_model_types<T>(assembly).Where(type => type.Name == classHint).FirstOrDefault()
+            ?? throw new Exception($"Unable to find class '{classHint}' for {typeof(T).Name}. Try give the correct Assembly");
 
         var type_from_pretrained = type.GetMethod(
-            "from_pretrained",
+            nameof(from_pretrained),
             BindingFlags.Static | BindingFlags.Public,
             new[] { typeof(string), typeof(ScalarType?), typeof(Device) }
-        ) ?? throw new Exception($"The LLM should have a public static from_pretrained(string, torch.ScalarType?, torch.Device?) method");
+        ) ?? throw new Exception($"The LLM class {classHint} should have a public static from_pretrained(string, torch.ScalarType?, torch.Device?) method");
 
         var result = type_from_pretrained.Invoke(null, new object?[] { path, dtype, device })
             ?? throw new Exception($"Unable to create class {classHint} with from_pretrained");
 
-        return (LanguageModel)result;
+        return (T)result;
     }
 
     public static (TModel, TModelConfig) model_from_pretrained<TModel, TModelConfig, TBuilder>(
