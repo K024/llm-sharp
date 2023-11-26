@@ -14,6 +14,9 @@ public static class Ops
     internal static extern IntPtr llm_sharp_hello(IntPtr handle);
 
     [DllImport("llm_sharp_ops")]
+    internal static extern void torch_empty_cache();
+
+    [DllImport("llm_sharp_ops")]
     internal static extern IntPtr torch_scaled_dot_product_attention(
         IntPtr query, IntPtr key, IntPtr value, IntPtr mask,
         double dropout_p, bool is_causal,
@@ -58,6 +61,12 @@ public static class Ops
         var result = llm_sharp_hello(tensor.Handle);
         CheckForErrors();
         return Tensor.UnsafeCreateTensor(result);
+    }
+
+    public static void cuda_empty_cache()
+    {
+        torch_empty_cache();
+        CheckForErrors();
     }
 
     public static Tensor torch_scaled_dot_product_attention(

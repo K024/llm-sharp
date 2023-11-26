@@ -37,9 +37,12 @@ public class LLMService
 
     public IEnumerable<string> Models => modelByName.Keys;
 
-    public LLMService(IOptionsMonitor<LLMConfig> optionsMonitor)
+    protected ILogger<LLMService> Logger;
+
+    public LLMService(IOptionsMonitor<LLMConfig> optionsMonitor, ILoggerFactory loggerFactory)
     {
         LibTorchLoader.EnsureLoaded();
+        Logger = loggerFactory.CreateLogger<LLMService>();
         // load models sync when first construct
         UpdateOptions(optionsMonitor.CurrentValue);
         optionsMonitor.OnChange(UpdateOptionsAsync);
@@ -53,10 +56,31 @@ public class LLMService
     {
         if (config is null)
             return;
+        Logger.LogInformation("Updated LLMConfig");
         lock (models)
         {
             modelByName = new();
             default_model = config.models.Count > 0 ? config.models[0].name : "";
+
+            var to_remove = models.Where(x => config.models.FindIndex(m => m.path == x.Key) < 0).ToList();
+            if (to_remove.Count > 0)
+            {
+                foreach (var model in to_remove)
+                {
+                    Logger.LogInformation("Removing model {model}", model.Key);
+                    models.Remove(model.Key);
+                    model.Value.Dispose();
+                    Logger.LogInformation("Removed model {model}", model.Key);
+                }
+                // explicit collect
+                GC.Collect();
+                GC.WaitForPendingFinalizers();
+                GC.WaitForFullGCComplete();
+                GC.Collect();
+                if (LibTorchLoader.NativeOpsLoaded)
+                    NativeOps.Ops.cuda_empty_cache();
+            }
+
             foreach (var model in config.models)
             {
                 modelByName.Add(model.name, model.path);
@@ -66,6 +90,7 @@ public class LLMService
                 if (models.ContainsKey(model.path))
                     continue;
 
+                Logger.LogInformation("Loading model {model}", model.path);
                 var model_instance = PretrainedModel.from_pretrained(
                     model.type,
                     model.path,
@@ -74,18 +99,16 @@ public class LLMService
                 );
 
                 models.Add(model.path, model_instance);
+                Logger.LogInformation("Loaded model {model}", model.path);
             }
 
-            var to_remove = models.Where(x => config.models.FindIndex(m => m.path == x.Key) < 0).ToList();
-            if (to_remove.Count > 0)
-            {
-                foreach (var model in to_remove)
-                {
-                    models.Remove(model.Key);
-                    // explicit collect
-                    GC.Collect();
-                }
-            }
+            // explicit collect
+            GC.Collect();
+            GC.WaitForPendingFinalizers();
+            GC.WaitForFullGCComplete();
+            GC.Collect();
+            if (LibTorchLoader.NativeOpsLoaded)
+                NativeOps.Ops.cuda_empty_cache();
         }
     }
 
@@ -99,6 +122,8 @@ public class LLMService
             var lm = models.GetValueOrDefault(path);
             if (lm is T typed_lm)
                 return typed_lm;
+            if (lm is not null)
+                Logger.LogDebug("Model {model} is not of type {type}", model, typeof(T).Name);
         }
 
         return null;

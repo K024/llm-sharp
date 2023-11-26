@@ -408,6 +408,11 @@ public abstract class AbstractLlama : GenerativeLM<AbstractLlama.LlamaState>
     public LlamaModel model { get; init; }
     public LlamaConfig model_config { get; init; }
 
+    public override void Dispose()
+    {
+        model.Dispose();
+    }
+
     public override int max_sequence_length => (int)model_config.max_sequence_length;
 
 #nullable disable

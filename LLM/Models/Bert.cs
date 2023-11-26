@@ -434,6 +434,11 @@ public abstract class AbstractBert : MaskedLM
     public torch.Device? device { get; protected set; }
     public BertModel model { get; init; }
     public BertConfig model_config { get; init; }
+
+    public override void Dispose()
+    {
+        model.Dispose();
+    }
     
 #nullable disable
     protected AbstractBert() { }

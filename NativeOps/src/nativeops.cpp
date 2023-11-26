@@ -1,6 +1,7 @@
 #include "c10/util/Optional.h"
 #include "utils.hpp"
 #include "ATen/Context.h"
+#include "c10/cuda/CUDACachingAllocator.h"
 
 thread_local char *torch_last_err = nullptr;
 
@@ -33,4 +34,10 @@ torch_scaled_dot_product_attention(
     CATCH_TENSOR(
         torch::scaled_dot_product_attention(*query, *key, *value, _mask, dropout_p, is_causal)
     );
+}
+
+EXPORT_API(void)
+torch_empty_cache()
+{
+    c10::cuda::CUDACachingAllocator::emptyCache();
 }

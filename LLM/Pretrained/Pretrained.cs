@@ -13,8 +13,10 @@ using Tensor = torch.Tensor;
 using ScalarType = torch.ScalarType;
 using Device = torch.Device;
 
-public abstract class PretrainedModel
+public abstract class PretrainedModel : IDisposable
 {
+    public abstract void Dispose();
+
     public static JsonSerializerOptions TupleJsonSerializerOptions { get; } = new()
     {
         Encoder = System.Text.Encodings.Web.JavaScriptEncoder.UnsafeRelaxedJsonEscaping,

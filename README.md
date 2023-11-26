@@ -30,7 +30,7 @@ C#:
   - [x] WordPiece
   - [ ] Unit tests
 - Serve
-  - [x] Openai compatible api with ASP.Core
+  - [x] OpenAI compatible api with ASP.Core
   - [x] Command line interface
   - [ ] Batched inference
 
@@ -71,7 +71,7 @@ Modify `appsettings.json` in `App` project or add an environment aware config `a
 }
 ```
 
-Default will start an http api service. The api is almost compatible with openai v1 api with `/v1/chat/completions` and `/v1/embeddings`. Visit `http://<server_url>/swagger/index.html` for api docs. You can also set `"Bearer": { "Token": "your-secret-token", "Tokens": ["some-extra-tokens"] }` in `appsettings.json` to enable endpoint authorization. You can use `--url http://<host>:<port>,http://<host2>:<port2>` to change the default listening urls.
+Default will start an http api service. The api is almost compatible with openai v1 api with `/v1/chat/completions` and `/v1/embeddings`. Visit `http://<server_url>/swagger/index.html` for api docs. You can also set `"Bearer": { "Token": "your-secret-token", "Tokens": ["some-extra-tokens"] }` in `appsettings.json` to enable endpoint authorization. You can use `--urls http://<host>:<port>,http://<host2>:<port2>` to change the default listening urls.
 
 After starting the api service, run `streamlit run web-ui.py` in [python-scripts](./python-scripts/) to start a simple web ui with streamlit.
 
@@ -82,7 +82,7 @@ llm-sharp cli
 
 ## Dev env setup
 
-It's recommended to use conda to manage the build environment for `NativeOps` package. Current TorchSharp depends on `torch==2.1.0` and `cuda==12.1.0`:
+It's recommended to use conda to manage the build environment for `NativeOps` package. Current TorchSharp depends on `torch==2.1.0` and `cuda==12.1`:
 
 ```sh
 conda install pytorch=2.1.0 pytorch-cuda=12.1 cuda -c pytorch -c nvidia

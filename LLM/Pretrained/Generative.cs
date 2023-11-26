@@ -23,6 +23,7 @@ public record GenerationConfig
     public float frequency_penalty { get; set; } = 0f;
     public float presence_penalty { get; set; } = 0f;
     public long? seed { get; set; }
+    public CancellationToken? cancellation { get; set; }
 }
 
 public record ChatResponseDelta
@@ -41,11 +42,18 @@ public abstract class GenerativeLM : PretrainedModel
         var channel = Channel.CreateUnbounded<ChatResponseDelta>();
         Task.Factory.StartNew(() =>
         {
-            foreach (var output in chat(messages, config))
+            try
             {
-                channel.Writer.WriteAsync(output).AsTask().Wait();
+                foreach (var output in chat(messages, config))
+                {
+                    channel.Writer.WriteAsync(output).AsTask().Wait();
+                }
+                channel.Writer.Complete();
             }
-            channel.Writer.Complete();
+            catch (Exception e)
+            {
+                channel.Writer.Complete(e);
+            }
         }, TaskCreationOptions.LongRunning);
         return channel.Reader.ReadAllAsync();
     }
@@ -172,6 +180,11 @@ public abstract class GenerativeLM<TState> : GenerativeLM
             stop_watch.Stop();
             generation_time.Add(stop_watch.Elapsed.TotalSeconds);
 
+            if (config.cancellation?.IsCancellationRequested ?? false)
+            {
+                finish_reason = "stop";
+                break;
+            }
             if (eos_tokens.Contains(next_token))
             {
                 finish_reason = "stop";

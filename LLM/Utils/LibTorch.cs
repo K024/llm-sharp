@@ -88,9 +88,12 @@ public static class LibTorchLoader
 {
     private static object load_lock = new object();
     private static volatile bool loaded = false;
+    private static volatile bool native_ops_loaded = false;
     private static string loaded_path = "";
 
     public static string LoadedPath => loaded_path;
+    public static bool Loaded => loaded;
+    public static bool NativeOpsLoaded => native_ops_loaded;
 
     public static void DownloadLibTorch(bool removeLast = false, bool skipVerification = false, string? optionalUrl = null)
     {
@@ -153,6 +156,7 @@ public static class LibTorchLoader
             try
             {
                 NativeOps.Ops.hello(torch.tensor(0f));
+                native_ops_loaded = true;
             }
             catch (Exception)
             {

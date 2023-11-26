@@ -87,7 +87,7 @@ public partial class V1Controller : ControllerBase
     [HttpPost("chat/completions")]
     [ProducesResponseType(typeof(ChatCompletionResult), 200)]
     [ProducesResponseType(typeof(ChatCompletionChunk), 206)]
-    public async Task<IActionResult> Completions(ChatCompletionRequest body)
+    public async Task<IActionResult> Completions(ChatCompletionRequest body, CancellationToken cancellationToken)
     {
         var created = DateTimeOffset.UtcNow.ToUnixTimeSeconds();
         var id = $"chatcmpl-{created}";
@@ -101,6 +101,7 @@ public partial class V1Controller : ControllerBase
             frequency_penalty = body.frequency_penalty,
             presence_penalty = body.presence_penalty,
             seed = body.seed,
+            cancellation = cancellationToken,
         };
 
         var llm = llmService.FindGenerativeLM(body.model);
