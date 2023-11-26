@@ -22,7 +22,11 @@ builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddSwaggerGen();
 builder.Services.AddCors(cors => cors.AddDefaultPolicy(policy =>
     {
-        policy.AllowAnyOrigin().AllowAnyMethod();
+        var origins = config.GetValue<List<string>>("Cors:AllowedOrigins", new());
+        policy
+            .SetIsOriginAllowedToAllowWildcardSubdomains()
+            .SetIsOriginAllowed(origin => origins.Count == 0 || origins.Contains(origin))
+            .AllowAnyMethod().AllowAnyHeader().AllowCredentials();
     }));
 
 builder.Services.AddRouting(options => options.LowercaseUrls = true);
