@@ -82,18 +82,26 @@ class LlamaFastBuilder : LlamaBuilder
 
     public override torch.nn.Module<Tensor, Tensor?, IRotary?, IKvCache?, Tensor>
         create_llama_attention()
-        => new FusedLlamaAttention(this);
+        => OptimizationConfig.current.fuse_attention
+            ? new FusedLlamaAttention(this)
+            : base.create_llama_attention();
 
     public override torch.nn.Module<Tensor, Tensor> create_ln()
-        => new FusedRMSNorm(new[] { config.hidden_size }, config.layernorm_epsilon, dtype: dtype, device: device);
+        => OptimizationConfig.current.fuse_layer_norm
+            ? new FusedRMSNorm(new[] { config.hidden_size }, config.layernorm_epsilon, dtype: dtype, device: device)
+            : base.create_ln();
 
     public override torch.nn.Module<Tensor, IRotary> create_rotary_embedding()
-        => new FastRotaryEmbedding(config.vocab_size, config.head_hidden_size, theta: config.rope_theta, dtype: dtype, device: device);
+        => OptimizationConfig.current.fuse_rotary_embedding
+            ? new FastRotaryEmbedding(config.vocab_size, config.head_hidden_size, theta: config.rope_theta, dtype: dtype, device: device)
+            : base.create_rotary_embedding();
 
     public override List<IKvCache> create_kv_cache(long batch_size)
-        => Enumerable.Range(0, config.num_layers)
-            .Select(_ => (IKvCache)new FastKvCache(batch_size, config.num_key_value_heads, config.head_hidden_size, device, dtype))
-            .ToList();
+        => OptimizationConfig.current.use_faster_kv_cache
+            ? Enumerable.Range(0, config.num_layers)
+                .Select(_ => (IKvCache)new FastKvCache(batch_size, config.num_key_value_heads, config.head_hidden_size, device, dtype))
+                .ToList()
+            : base.create_kv_cache(batch_size);
 }
 
 class LlamaAwqBuilder : LlamaFastBuilder
@@ -127,6 +135,9 @@ public class LlamaAwq : Llama
 {
     public static void convert_turbomind(torch.nn.Module module)
     {
+        if (!OptimizationConfig.current.enable_turbomind_gemm)
+            return;
+
         Console.WriteLine("Converting to TurboMind format...");
         foreach (var submodule in module.modules())
         {

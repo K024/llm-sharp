@@ -42,7 +42,7 @@ public class Baichuan : AbstractLlama
         torch.ScalarType? dtype = null,
         torch.Device? device = null)
     {
-        var (model, model_config) = model_from_pretrained<LlamaModel, LlamaConfig, LlamaBuilder>(path, dtype, device);
+        var (model, model_config) = model_from_pretrained<LlamaModel, LlamaConfig, LlamaFastBuilder>(path, dtype, device);
         var (tokenizer, tokenizer_config) = tokenizer_from_pretrained<SentencePieceBPE, SentencePieceBPEConfig>(path);
 
         norm_head((CustomLinear)model.lm_head);

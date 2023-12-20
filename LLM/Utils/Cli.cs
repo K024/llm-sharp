@@ -119,6 +119,15 @@ public static class CliExtensions
                     Console.WriteLine($"Invalid frequency_penalty value: {value}");
                 continue;
             }
+            if (query.StartsWith(".seed"))
+            {
+                var value = query.Split(' ').Last();
+                if (int.TryParse(value, out var seed_value))
+                    generation_config.seed = seed_value == -1 ? null : seed_value;
+                else
+                    Console.WriteLine($"Invalid seed value: {value}");
+                continue;
+            }
 
             var answer = "";
 

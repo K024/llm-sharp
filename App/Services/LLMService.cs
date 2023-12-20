@@ -29,6 +29,8 @@ public class LLMService
     public class LLMConfig
     {
         public List<LLMModelConfig> models { get; set; } = new();
+
+        public OptimizationConfig optimization { get; set; } = new();
     }
 
     private string default_model = "";
@@ -59,6 +61,8 @@ public class LLMService
         Logger.LogInformation("Updated LLMConfig");
         lock (models)
         {
+            OptimizationConfig.current = config.optimization;
+
             modelByName = new();
             default_model = config.models.Count > 0 ? config.models[0].name : "";
 
@@ -77,7 +81,7 @@ public class LLMService
                 GC.WaitForPendingFinalizers();
                 GC.WaitForFullGCComplete();
                 GC.Collect();
-                if (LibTorchLoader.NativeOpsLoaded)
+                if (LibTorchLoader.NativeOpsLoaded && OptimizationConfig.current.auto_empty_cache)
                     NativeOps.Ops.cuda_empty_cache();
             }
 
@@ -107,7 +111,7 @@ public class LLMService
             GC.WaitForPendingFinalizers();
             GC.WaitForFullGCComplete();
             GC.Collect();
-            if (LibTorchLoader.NativeOpsLoaded)
+            if (LibTorchLoader.NativeOpsLoaded && OptimizationConfig.current.auto_empty_cache)
                 NativeOps.Ops.cuda_empty_cache();
         }
     }

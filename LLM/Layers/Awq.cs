@@ -2,6 +2,7 @@ using TorchSharp;
 using TorchSharp.Modules;
 using llm_sharp.LLM.Utils;
 using llm_sharp.NativeOps;
+using llm_sharp.LLM.Pretrained;
 
 namespace llm_sharp.LLM.Layers;
 
@@ -81,6 +82,8 @@ public class AwqLinear : nn.Module<Tensor, Tensor>
     protected bool is_converted_turbomind = false;
     public void convert_turbomind()
     {
+        if (!OptimizationConfig.current.enable_turbomind_gemm)
+            return;
         if (is_converted_turbomind)
             return;
 

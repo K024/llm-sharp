@@ -110,7 +110,10 @@ public abstract class GenerativeLM<TState> : GenerativeLM
         probs = probs / torch.sum(probs, dim: -1, keepdim: true);
 
         // sample
+        if (generator is not null)
+            probs = probs.to(torch.CPU); // generator won't work on CUDA
         var next_token = torch.multinomial(probs, num_samples: 1, generator: generator);
+        next_token = next_token.to(indices.device);
 
         var output = torch.gather(indices, dim: -1, index: next_token);
 

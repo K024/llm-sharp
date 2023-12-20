@@ -429,7 +429,8 @@ public abstract class AbstractLlama : GenerativeLM<AbstractLlama.LlamaState>
     {
         return new() {
             past_key_values = model.create_kv_cache(1),
-            generator = config.seed.HasValue ? new torch.Generator((ulong)config.seed.Value, device) : null
+            // generator won't work on CUDA
+            generator = config.seed.HasValue ? new torch.Generator((ulong)config.seed.Value) : null
         };
     }
 
@@ -474,7 +475,7 @@ public class Llama : AbstractLlama
         torch.ScalarType? dtype = null,
         torch.Device? device = null)
     {
-        var (model, model_config) = model_from_pretrained<LlamaModel, LlamaConfig, LlamaBuilder>(path, dtype, device);
+        var (model, model_config) = model_from_pretrained<LlamaModel, LlamaConfig, LlamaFastBuilder>(path, dtype, device);
         var (tokenizer, tokenizer_config) = tokenizer_from_pretrained<SentencePieceBPE, SentencePieceBPEConfig>(path);
         return new Llama()
         {

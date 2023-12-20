@@ -16,7 +16,11 @@ public static class LibTorchDownloader
     public static string defaultUrl => $"https://download.pytorch.org/whl/{cuda}/torch-{torch}%2B{cuda}-cp310-cp310-{arch}.whl";
     public static string whlFilename => $"torch-{torch}-{cuda}-{arch}-whl.zip";
 
-    public static string cacheDir => Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), ".cache", "llm-sharp");
+    public static string cacheDir =>
+        Path.Combine(
+            Environment.GetFolderPath(Environment.SpecialFolder.UserProfile),
+            ".cache", "llm-sharp", humanVersion
+        );
 
     public static string HumanSize(long size) => size switch
     {
