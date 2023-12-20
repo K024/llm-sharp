@@ -17,6 +17,11 @@ public static partial class Extensions
 
 public class LLMService
 {
+    public class LLMLoraConfig
+    {
+        public string weights_path { get; set; } = "";
+        public float alpha { get; set; } = 1.0f;
+    }
     public class LLMModelConfig
     {
         public string name { get; set; } = "";
@@ -25,6 +30,7 @@ public class LLMService
         public string path { get; set; } = "";
         public string dtype { get; set; } = "float16";
         public string device { get; set; } = "cuda";
+        public LLMLoraConfig? lora { get; set; }
     }
     public class LLMConfig
     {
@@ -101,6 +107,11 @@ public class LLMService
                     Enum.Parse<torch.ScalarType>(model.dtype, true),
                     torch.device(model.device)
                 );
+                if (model.lora is not null)
+                {
+                    Logger.LogInformation("Applying lora weights from {path}", model.lora.weights_path);
+                    model_instance.load_lora_weights(model.lora.weights_path, model.lora.alpha);
+                }
 
                 models.Add(model.path, model_instance);
                 Logger.LogInformation("Loaded model {model}", model.path);

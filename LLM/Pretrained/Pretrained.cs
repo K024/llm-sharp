@@ -100,6 +100,10 @@ public abstract class PretrainedModel : IDisposable
         var state_dict = (model as torch.nn.Module)!.state_dict();
         var weight_files = new Matcher().AddInclude(model_weights_pattern).GetResultsInFullPath(path);
 
+        // filter out the files with more than one dot
+        // used by lora weights
+        weight_files = weight_files.Where(x => Path.GetFileNameWithoutExtension(x).All(c => c != '.'));
+
         load_state_dict(state_dict, weight_files.ToArray());
 
         return (model, modelConfig);
@@ -143,5 +147,10 @@ public abstract class PretrainedModel : IDisposable
 
         if (cloned.Count > 0)
             Console.WriteLine($"Uninitialized states: {string.Join(',', cloned.Keys)}");
+    }
+
+    public virtual void load_lora_weights(string weight_files, float lora_alpha = 1.0f)
+    {
+        throw new NotImplementedException();
     }
 }

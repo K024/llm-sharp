@@ -186,6 +186,7 @@ public abstract class GenerativeLM<TState> : GenerativeLM
             if (config.cancellation?.IsCancellationRequested ?? false)
             {
                 finish_reason = "stop";
+                Console.WriteLine("LLM: chat_async cancelled");
                 break;
             }
             if (eos_tokens.Contains(next_token))

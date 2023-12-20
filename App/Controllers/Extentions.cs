@@ -1,8 +1,31 @@
+using System.ComponentModel.DataAnnotations;
 using System.Text;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.Mvc.Infrastructure;
 
 namespace llm_sharp.Controllers;
+
+
+[AttributeUsage(AttributeTargets.Property, AllowMultiple = false, Inherited = true)]
+public class AnyOfAttribute : ValidationAttribute
+{
+    public AnyOfAttribute(params string[] values)
+    {
+        Values = values;
+    }
+
+    public string[] Values { get; }
+
+    protected override ValidationResult? IsValid(object? value, ValidationContext validationContext)
+    {
+        if (value is null)
+            return ValidationResult.Success;
+        if (Values.Contains(value.ToString()))
+            return ValidationResult.Success;
+        return new ValidationResult($"Value should be one of {string.Join(',', Values)}");
+    }
+}
+
 
 public record ServerSentEvent
 {

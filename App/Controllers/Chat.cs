@@ -10,9 +10,16 @@ namespace llm_sharp.Controllers;
 
 public partial class V1Controller : ControllerBase
 {
+    public const string USER = "user";
+    public const string SYSTEM = "system";
+    public const string ASSISTANT = "assistant";
+
     public record ChatMessage
     {
+        protected static readonly List<string> roles = new() { USER, SYSTEM, ASSISTANT };
+
         [Required]
+        [AnyOf(USER, SYSTEM, ASSISTANT)]
         public string role { get; set; } = "";
         [Required]
         public string content { get; set; } = "";
@@ -112,26 +119,6 @@ public partial class V1Controller : ControllerBase
             new LLM.Pretrained.ChatMessage() { role = m.role, content = m.content }).ToList();
         var stream = llm.chat_async(messages, config);
 
-        var prompt_tokens = 0;
-        async Task<ChatResponseDelta> collect()
-        {
-            var delta = new ChatResponseDelta();
-            var response = new StringBuilder();
-            await foreach (var output in stream)
-            {
-                if (output.content == "" && output.tokens > 0)
-                {
-                    prompt_tokens += output.tokens;
-                    continue;
-                }
-                response.Append(output.content);
-                delta.tokens += output.tokens;
-                delta.finish_reason = output.finish_reason;
-            }
-            delta.content = response.ToString();
-            return delta;
-        }
-
         async IAsyncEnumerable<ServerSentEvent> sse_stream()
         {
             var jsonOptions = new JsonSerializerOptions()
@@ -149,7 +136,7 @@ public partial class V1Controller : ControllerBase
                 choices = new List<ChatCompletionChunkChoice>() {
                     new ChatCompletionChunkChoice() {
                         delta = new ChatCompletionChunkDelta() {
-                            role = "assistant",
+                            role = ASSISTANT,
                         },
                     }
                 },
@@ -176,29 +163,42 @@ public partial class V1Controller : ControllerBase
             yield return new ServerSentEvent() { Data = "[DONE]" };
         }
 
-        if (!body.stream)
+        if (body.stream)
+            return new ServerSentEventsResult(sse_stream());
+
+        var prompt_tokens = 0;
+        var delta = new ChatResponseDelta();
+        var response = new StringBuilder();
+        await foreach (var output in stream)
         {
-            var delta = await collect();
-            return Ok(new ChatCompletionResult()
+            if (output.content == "" && output.tokens > 0)
             {
-                id = id,
-                created = created,
-                model = body.model,
-                choices = new List<ChatCompletionChoice>() {
+                prompt_tokens += output.tokens;
+                continue;
+            }
+            response.Append(output.content);
+            delta.tokens += output.tokens;
+            delta.finish_reason = output.finish_reason;
+        }
+        delta.content = response.ToString();
+
+        return Ok(new ChatCompletionResult()
+        {
+            id = id,
+            created = created,
+            model = body.model,
+            choices = new List<ChatCompletionChoice>() {
                     new ChatCompletionChoice() {
-                        message = new ChatMessage() { content = delta.content, role = "assistant" },
+                        message = new ChatMessage() { content = delta.content, role = ASSISTANT },
                         finish_reason = delta.finish_reason ?? "stop",
                     }
                 },
-                usage = new ChatCompletionUsage()
-                {
-                    prompt_tokens = prompt_tokens,
-                    completion_tokens = delta.tokens,
-                    total_tokens = prompt_tokens + delta.tokens,
-                }
-            });
-        }
-
-        return this.ServerSentEvents(sse_stream());
+            usage = new ChatCompletionUsage()
+            {
+                prompt_tokens = prompt_tokens,
+                completion_tokens = delta.tokens,
+                total_tokens = prompt_tokens + delta.tokens,
+            }
+        });
     }
 }
