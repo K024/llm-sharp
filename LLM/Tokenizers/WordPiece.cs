@@ -59,6 +59,8 @@ public class WordPiece : ITokenizer
                 }
 
                 var substr = word[start..(start + length)];
+                if (start > 0)
+                    substr = prefix + substr;
                 sub_tokens.Add(vocab[substr]);
                 start += length;
             }
