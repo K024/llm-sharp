@@ -1,7 +1,6 @@
 using System.Collections;
 using System.Text;
 using System.Text.RegularExpressions;
-using ICSharpCode.SharpZipLib.Zip;
 
 namespace llm_sharp.LLM.Tokenizers;
 

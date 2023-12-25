@@ -13,6 +13,7 @@ public partial class V1Controller : ControllerBase
         public string model { get; set; } = "";
         [Required]
         public string input { get; set; } = "";
+        [AnyOf("float")]
         public string encoding_format { get; set; } = "float";
     }
 

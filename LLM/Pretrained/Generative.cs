@@ -97,6 +97,7 @@ public abstract class GenerativeLM<TState> : GenerativeLM
         using var scope = torch.NewDisposeScope();
 
         // top_k
+        temperature = Math.Min(Math.Max(temperature, 1e-5), 1e2);
         var probs = torch.softmax(logits.to(torch.float32) / temperature, dim: -1);
         var (sorted_probs, indices) = torch.sort(probs, dim: -1, descending: true);
 
@@ -111,7 +112,7 @@ public abstract class GenerativeLM<TState> : GenerativeLM
 
         // sample
         if (generator is not null)
-            probs = probs.to(torch.CPU); // generator won't work on CUDA
+            probs = probs.to(generator.device); // generator won't work on CUDA
         var next_token = torch.multinomial(probs, num_samples: 1, generator: generator);
         next_token = next_token.to(indices.device);
 

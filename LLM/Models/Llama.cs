@@ -438,7 +438,7 @@ public abstract class AbstractLlama : GenerativeLM<AbstractLlama.LlamaState>
     {
         return new() {
             past_key_values = model.create_kv_cache(1),
-            // generator won't work on CUDA
+            // generator won't work on CUDA, https://github.com/dotnet/TorchSharp/issues/1194
             generator = config.seed.HasValue ? new torch.Generator((ulong)config.seed.Value) : null
         };
     }
