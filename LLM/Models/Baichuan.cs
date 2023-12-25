@@ -66,9 +66,9 @@ public class Baichuan : AbstractLlama
         {
             prompt += message.role switch
             {
-                "system" => $"{message.content}",
-                "user" => $"<reserved_106>{message.content}",
-                "assistant" => $"<reserved_107>{message.content}",
+                SYSTEM => $"{message.content}",
+                USER => $"<reserved_106>{message.content}",
+                ASSISTANT => $"<reserved_107>{message.content}",
                 _ => "",
             };
         }

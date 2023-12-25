@@ -68,6 +68,8 @@ public class LLMService
         lock (models)
         {
             OptimizationConfig.current = config.optimization;
+            if (!LibTorchLoader.NativeOpsLoaded)
+                OptimizationConfig.set_no_native_ops();
 
             modelByName = new();
             default_model = config.models.Count > 0 ? config.models[0].name : "";

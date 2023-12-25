@@ -42,9 +42,9 @@ public class Qwen : AbstractLlama
         {
             prompt += message.role switch
             {
-                "system" => $"<|im_start|>system\n{message.content}<|im_end|>\n",
-                "user" => $"<|im_start|>user\n{message.content}<|im_end|>\n",
-                "assistant" => $"<|im_start|>assistant\n{message.content}<|im_end|>\n",
+                SYSTEM => $"<|im_start|>system\n{message.content}<|im_end|>\n",
+                USER => $"<|im_start|>user\n{message.content}<|im_end|>\n",
+                ASSISTANT => $"<|im_start|>assistant\n{message.content}<|im_end|>\n",
                 _ => ""
             };
         }

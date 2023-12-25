@@ -79,7 +79,7 @@ public class AwqLinear : nn.Module<Tensor, Tensor>
         RegisterComponents();
     }
 
-    protected bool is_converted_turbomind = false;
+    public bool is_converted_turbomind { get; protected set; } = false;
     public void convert_turbomind()
     {
         if (!OptimizationConfig.current.enable_turbomind_gemm)

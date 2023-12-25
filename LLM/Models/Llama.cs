@@ -392,6 +392,10 @@ public class LlamaModel : nn.Module<LlamaModelInput, LlamaModelOutput>
 
 public abstract class AbstractLlama : GenerativeLM<AbstractLlama.LlamaState>
 {
+    public const string USER = "user";
+    public const string SYSTEM = "system";
+    public const string ASSISTANT = "assistant";
+
     public class LlamaState : IDisposable
     {
         public List<IKvCache> past_key_values { get; set; } = new();
@@ -407,6 +411,11 @@ public abstract class AbstractLlama : GenerativeLM<AbstractLlama.LlamaState>
     public torch.Device? device { get; protected set; }
     public LlamaModel model { get; init; }
     public LlamaConfig model_config { get; init; }
+
+    public override void load_lora_weights(string weight_files, float lora_alpha = 1.0f)
+    {
+        Lora.apply_lora_weights(model, weight_files, lora_alpha);
+    }
 
     public override void Dispose()
     {
@@ -490,20 +499,20 @@ public class Llama : AbstractLlama
     protected override List<int> prepare_input(List<ChatMessage> messages)
     {
         var prompt = "";
-        var system = "";
+        var system_prompt = "";
         foreach (var message in messages)
         {
             prompt += message.role switch
             {
-                "user" when !string.IsNullOrEmpty(system) =>
-                    $"<s>[INST] <<SYS>>\n{system}\n<</SYS>>\n\n{message.content} [/INST]",
-                "user" => $"<s>[INST] {message.content} [/INST]",
-                "assistant" => $" {message.content} </s>",
+                USER when !string.IsNullOrEmpty(system_prompt) =>
+                    $"<s>[INST] <<SYS>>\n{system_prompt}\n<</SYS>>\n\n{message.content} [/INST]",
+                USER => $"<s>[INST] {message.content} [/INST]",
+                ASSISTANT => $" {message.content} </s>",
                 _ => "",
             };
-            system = message.role switch
+            system_prompt = message.role switch
             {
-                "system" => message.content,
+                SYSTEM => message.content,
                 _ => ""
             };
         }

@@ -4,9 +4,9 @@
 ## Get latest from https://github.com/github/gitignore/blob/master/VisualStudio.gitignore
 
 # models and datasets
-/models
-/datasets
-/publish
+/models*
+/datasets*
+/publish*
 
 # User-specific files
 *.rsuser

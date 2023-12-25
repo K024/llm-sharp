@@ -2,6 +2,7 @@ using System.Diagnostics;
 using System.IO.Compression;
 using System.Runtime.InteropServices;
 using System.Text.Json;
+using llm_sharp.LLM.Pretrained;
 using TorchSharp;
 
 namespace llm_sharp.LLM.Utils;
@@ -169,6 +170,7 @@ public static class LibTorchLoader
                     "    This may caused by incompatible libtorch cuda version.\n" +
                     "    Required version: " + LibTorchDownloader.humanVersion
                 );
+                OptimizationConfig.set_no_native_ops();
             }
         }
     }
